@@ -7,6 +7,7 @@
 //!
 //! - [`config`] - Configuration loading and management
 //! - [`error`] - Error types and result aliases
+//! - [`extract`] - Extraction pipeline for keyword candidates
 //!
 //! # Quick Start
 //!
@@ -26,6 +27,8 @@ pub mod config;
 
 pub mod error;
 
+pub mod extract;
+
 pub use config::{Config, ConfigLoader, LogLevel};
 
-pub use error::{ConfigError, ConfigResult};
+pub use error::{ConfigError, ConfigResult, ExtractError, ExtractResult};
