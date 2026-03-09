@@ -39,17 +39,65 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{ConfigError, ConfigResult};
 
+/// Configuration for source file discovery.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(default)]
+pub struct SourceConfig {
+    /// Root directory to scan for content files.
+    pub dir: String,
+    /// File extensions to include (without dots).
+    pub extensions: Vec<String>,
+    /// File names to exclude from processing.
+    pub exclude: Vec<String>,
+}
+
+impl Default for SourceConfig {
+    fn default() -> Self {
+        Self {
+            dir: ".".to_string(),
+            extensions: vec!["md".to_string()],
+            exclude: Vec::new(),
+        }
+    }
+}
+
+/// Configuration for the keyword extraction pipeline.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(default)]
+pub struct ExtractConfig {
+    /// N-gram range for keyword extraction [min, max].
+    pub ngram_range: [usize; 2],
+    /// Minimum relevance score threshold (0.0 to 1.0).
+    pub min_score: f64,
+    /// Maximum number of candidates to emit.
+    pub max_candidates: usize,
+}
+
+impl Default for ExtractConfig {
+    fn default() -> Self {
+        Self {
+            ngram_range: [1, 3],
+            min_score: 0.1,
+            max_candidates: 500,
+        }
+    }
+}
+
 /// The configuration for colophon.
 ///
 /// Add your configuration fields here. This struct is deserialized from
 /// config files found during discovery (TOML, YAML, or JSON).
-#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
 #[serde(default)]
 pub struct Config {
     /// Log level for the application (e.g., "debug", "info", "warn", "error").
     pub log_level: LogLevel,
     /// Directory for JSONL log files (falls back to platform defaults if unset).
     pub log_dir: Option<Utf8PathBuf>,
+    /// Source file discovery settings.
+    pub source: SourceConfig,
+    /// Keyword extraction pipeline settings.
+    pub extract: ExtractConfig,
 }
 
 /// Log level configuration.
@@ -540,6 +588,54 @@ log_dir = "/tmp/colophon"
             .unwrap();
 
         assert_eq!(config.log_level, LogLevel::Debug);
+    }
+
+    #[test]
+    fn test_source_and_extract_config_from_toml() {
+        let tmp = TempDir::new().unwrap();
+        let config_path = tmp.path().join("config.toml");
+        fs::write(
+            &config_path,
+            r#"
+log_level = "info"
+
+[source]
+dir = "docs/"
+extensions = ["md", "mdx"]
+exclude = ["README.md"]
+
+[extract]
+ngram_range = [1, 4]
+min_score = 0.05
+max_candidates = 300
+"#,
+        )
+        .unwrap();
+
+        let config_path = Utf8PathBuf::try_from(config_path).unwrap();
+        let (config, _) = ConfigLoader::new()
+            .with_user_config(false)
+            .with_file(&config_path)
+            .load()
+            .unwrap();
+
+        assert_eq!(config.source.dir, "docs/");
+        assert_eq!(config.source.extensions, vec!["md", "mdx"]);
+        assert_eq!(config.source.exclude, vec!["README.md"]);
+        assert_eq!(config.extract.ngram_range, [1, 4]);
+        assert_eq!(config.extract.min_score, 0.05);
+        assert_eq!(config.extract.max_candidates, 300);
+    }
+
+    #[test]
+    fn test_source_and_extract_defaults() {
+        let config = Config::default();
+        assert_eq!(config.source.dir, ".");
+        assert_eq!(config.source.extensions, vec!["md"]);
+        assert!(config.source.exclude.is_empty());
+        assert_eq!(config.extract.ngram_range, [1, 3]);
+        assert_eq!(config.extract.min_score, 0.1);
+        assert_eq!(config.extract.max_candidates, 500);
     }
 
     #[test]
