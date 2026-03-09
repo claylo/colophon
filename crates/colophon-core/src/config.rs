@@ -40,7 +40,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::{ConfigError, ConfigResult};
 
 /// Configuration for source file discovery.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct SourceConfig {
     /// Root directory to scan for content files.

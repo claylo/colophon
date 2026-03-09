@@ -14,7 +14,7 @@ pub struct Candidate {
 }
 
 /// Where a candidate term was found.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CandidateLocation {
     /// Relative path to the source file.
     pub file: String,
