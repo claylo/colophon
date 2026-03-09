@@ -35,6 +35,19 @@ serde = { version = "1.0", features = ["derive"] }
 thiserror = "2.0"
 tracing = "0.1"
 
+# Markdown parsing
+pulldown-cmark = "0.13"
+
+# Keyword extraction (YAKE + TF-IDF)
+keyword_extraction = { version = "1.5", features = ["yake", "tf_idf"] }
+stop-words = "0.10"
+
+# YAML serialization for candidates output
+serde_yaml = "0.9"
+
+# Directory traversal
+walkdir = "2"
+
 [dev-dependencies]
 tempfile = "3.26"
 
