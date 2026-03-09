@@ -14,7 +14,7 @@
 //! ```no_run
 //! use colophon_core::{Config, ConfigLoader};
 //!
-//! let config = ConfigLoader::new()
+//! let (config, _sources) = ConfigLoader::new()
 //!     .with_user_config(true)
 //!     .load()
 //!     .expect("Failed to load configuration");
