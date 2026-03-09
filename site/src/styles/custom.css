@@ -1,0 +1,17 @@
+/* Cornflower blue accent — #6495ED */
+:root {
+  --sl-color-accent-low: hsl(219, 50%, 20%);
+  --sl-color-accent: hsl(219, 79%, 66%);
+  --sl-color-accent-high: hsl(219, 90%, 86%);
+}
+:root[data-theme="light"] {
+  --sl-color-accent-high: hsl(219, 54%, 32%);
+  --sl-color-accent: hsl(219, 79%, 56%);
+  --sl-color-accent-low: hsl(219, 88%, 90%);
+}
+.emoji {
+  display: inline;
+  background-color: transparent;
+  box-sizing: content-box;
+  vertical-align: text-top;
+}

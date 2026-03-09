@@ -1,0 +1,17 @@
+name: Setup site dependencies
+description: Install npm and site dependencies for the documentation site
+
+runs:
+  using: composite
+  steps:
+
+    - name: Setup Node.js
+      uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+      with:
+        node-version: 22
+
+    - name: Install dependencies
+      shell: bash
+      working-directory: site
+      run: npm ci
+

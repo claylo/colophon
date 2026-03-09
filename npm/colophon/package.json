@@ -1,0 +1,29 @@
+{
+  "name": "@claylo/colophon",
+  "version": "0.1.0",
+  "description": "A modern, production-ready Rust CLI application.",
+  "license": "(Apache-2.0 OR MIT)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/claylo/colophon"
+  },
+  "bin": {
+    "colophon": "cli.js"
+  },
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "files": [
+    "index.js",
+    "cli.js",
+    "install.js"
+  ],
+  "optionalDependencies": {
+    "@claylo/colophon-darwin-arm64": "0.1.0",
+    "@claylo/colophon-darwin-x64": "0.1.0",
+    "@claylo/colophon-linux-arm64": "0.1.0",
+    "@claylo/colophon-linux-x64": "0.1.0",
+    "@claylo/colophon-win32-arm64": "0.1.0",
+    "@claylo/colophon-win32-x64": "0.1.0"
+  }
+}

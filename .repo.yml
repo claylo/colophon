@@ -1,0 +1,52 @@
+# Changes here will be overwritten by Copier
+_commit: v1.0.0-beta.7
+_src_path: gh:claylo/claylo-rs
+categories:
+- command-line-utilities
+- development-tools
+copyright_name: Clay Loveless
+copyright_year: '2026'
+edition: '2024'
+has_agents_md: true
+has_attestations: true
+has_benchmarks: false
+has_claude: true
+has_claude_commands: false
+has_claude_skills: false
+has_cli: true
+has_coda: true
+has_community_files: false
+has_config: true
+has_core_library: true
+has_editorconfig: false
+has_env_files: false
+has_gitattributes: true
+has_github: true
+has_indicatif: false
+has_inquire: false
+has_issue_templates: true
+has_jsonl_logging: true
+has_mcp_server: false
+has_md: true
+has_md_strict: false
+has_opentelemetry: false
+has_pr_templates: true
+has_releases: true
+has_roadmap_votes: false
+has_security_md: true
+has_site: true
+has_yamlfmt: false
+has_yamllint: false
+hook_system: none
+license:
+- Apache-2.0
+- MIT
+lint_level: strict
+msrv: 1.88.0
+owner: claylo
+pinned_dev_toolchain: 1.94.0
+preset: standard
+project_description: A modern, production-ready Rust CLI application.
+project_name: colophon
+site_deploy: github_pages
+site_package_manager: npm

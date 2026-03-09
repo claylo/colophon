@@ -1,0 +1,59 @@
+[package]
+name = "colophon"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+exclude = [
+    # Workspace-level files (/ = workspace root)
+    # Copier answers file (template state, not project code)
+    "/.repo.yml",
+   "/.claude/",
+    "/.github/",
+    "/AGENTS.md",
+    "/.justfile",
+    "/.markdownlint.yaml",
+    "/docs/",
+    "/deny.toml",
+]
+
+[[bin]]
+name = "colophon"
+path = "src/main.rs"
+
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ version }-{ target }.tar.gz"
+bin-dir = "bin/{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ version }-{ target }.zip"
+pkg-fmt = "zip"
+
+[package.metadata.binstall.overrides.aarch64-pc-windows-msvc]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ version }-{ target }.zip"
+pkg-fmt = "zip"
+
+[dependencies]
+colophon-core = { version = "0.1", path = "../colophon-core" }
+clap = { version = "4.5", features = ["derive"] }
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+owo-colors = { version = "4.3", features = ["supports-colors"] }
+camino = { version = "1.2", features = ["serde1"] }
+directories = "6.0"
+
+[dev-dependencies]
+assert_cmd = "2.1"
+predicates = "3.1"
+tempfile = "3.26"
+[lints]
+workspace = true

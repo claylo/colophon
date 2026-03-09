@@ -1,0 +1,13 @@
+{
+  "name": "@claylo/colophon-win32-x64",
+  "version": "0.1.0",
+  "description": "A modern, production-ready Rust CLI application. (win32-x64 binary)",
+  "license": "(Apache-2.0 OR MIT)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/claylo/colophon"
+  },
+  "os": ["win32"],
+  "cpu": ["x64"],
+  "files": ["bin/"]
+}

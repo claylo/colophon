@@ -1,0 +1,21 @@
+{
+  "name": "colophon-docs",
+  "type": "module",
+  "version": "0.0.1",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "^0.37.6",
+    "astro": "^5.18.0",
+    "sharp": "^0.34.5",
+    "rehype-github-emoji": "^1.0.0",
+    "unist-util-visit": "^5.1.0"
+  },
+  "devDependencies": {
+    "vite-plugin-beasties": "^0.4.1"
+  }
+}

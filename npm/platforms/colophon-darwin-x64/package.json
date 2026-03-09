@@ -1,0 +1,13 @@
+{
+  "name": "@claylo/colophon-darwin-x64",
+  "version": "0.1.0",
+  "description": "A modern, production-ready Rust CLI application. (darwin-x64 binary)",
+  "license": "(Apache-2.0 OR MIT)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/claylo/colophon"
+  },
+  "os": ["darwin"],
+  "cpu": ["x64"],
+  "files": ["bin/"]
+}
