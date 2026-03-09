@@ -3,7 +3,7 @@
 
 use anyhow::Context;
 use clap::Parser;
-use colophon::{Cli, Commands, commands};
+use colophon::{commands, Cli, Commands};
 use colophon_core::config::ConfigLoader;
 use tracing::debug;
 
@@ -70,6 +70,7 @@ fn main() -> anyhow::Result<()> {
         Commands::Doctor(args) => {
             commands::doctor::cmd_doctor(args, cli.json, &config_sources, &cwd)
         }
+        Commands::Extract(args) => commands::extract::cmd_extract(args, cli.json, &config),
         Commands::Info(args) => commands::info::cmd_info(args, cli.json, &config, &config_sources),
     };
     if let Err(ref err) = result {

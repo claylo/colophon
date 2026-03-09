@@ -208,3 +208,87 @@ fn chdir_nonexistent_fails() {
         .assert()
         .failure();
 }
+
+// =============================================================================
+// Extract Command
+// =============================================================================
+
+#[test]
+fn extract_help_shows_options() {
+    cmd()
+        .args(["extract", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--dir"))
+        .stdout(predicate::str::contains("--output"));
+}
+
+#[test]
+fn extract_on_empty_dir_fails() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    cmd()
+        .args(["-C", tmp.path().to_str().unwrap(), "extract", "--dir", "."])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("no documents found"));
+}
+
+#[test]
+fn extract_produces_yaml_output() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    std::fs::write(
+        tmp.path().join("test.md"),
+        "# OAuth Authentication\n\n\
+         OAuth provides delegated authorization for web applications. \
+         Token-based authentication is the modern standard for API security. \
+         OAuth 2.0 uses access tokens and refresh tokens for authorization.\n",
+    )
+    .unwrap();
+
+    let output_file = tmp.path().join("candidates.yaml");
+    cmd()
+        .args([
+            "-C",
+            tmp.path().to_str().unwrap(),
+            "extract",
+            "--dir",
+            ".",
+            "--output",
+            output_file.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("candidates"))
+        .stdout(predicate::str::contains("documents"));
+
+    assert!(output_file.exists(), "should write candidates file");
+    let content = std::fs::read_to_string(&output_file).unwrap();
+    assert!(content.contains("version: 1"));
+}
+
+#[test]
+fn extract_json_outputs_valid_json() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    std::fs::write(
+        tmp.path().join("doc.md"),
+        "# Testing\n\nThis is a document about keyword extraction and natural language processing techniques.\n",
+    )
+    .unwrap();
+
+    let output = cmd()
+        .args([
+            "-C",
+            tmp.path().to_str().unwrap(),
+            "extract",
+            "--dir",
+            ".",
+            "--json",
+        ])
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8_lossy(&output.get_output().stdout);
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("--json should output valid JSON");
+    assert_eq!(json["version"], 1);
+}
