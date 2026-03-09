@@ -108,37 +108,53 @@ pub fn extract_prose(markdown: &str) -> String {
 /// `window` characters on each side of the match, snapped to word boundaries.
 /// Returns `None` if the term is not found.
 pub fn extract_context(text: &str, term: &str, window: usize) -> Option<String> {
+    // Work with char indices to handle multi-byte UTF-8 correctly.
     let lower_text = text.to_lowercase();
     let lower_term = term.to_lowercase();
 
-    let match_start = lower_text.find(&lower_term)?;
-    let match_end = match_start + term.len();
+    // Find the char offset of the match in the lowercased text.
+    let lower_char_offset = lower_text
+        .char_indices()
+        .position(|(byte_pos, _)| lower_text[byte_pos..].starts_with(&lower_term))?;
 
-    // Determine raw window bounds
-    let raw_start = match_start.saturating_sub(window);
-    let raw_end = (match_end + window).min(text.len());
+    // Map char offset back to original text. Since to_lowercase() can change
+    // byte lengths, we walk char-by-char through the original text.
+    let char_indices: Vec<(usize, char)> = text.char_indices().collect();
+    if lower_char_offset >= char_indices.len() {
+        return None;
+    }
 
-    // Snap start to word boundary (move forward to first non-space after a space,
-    // or stay at 0 if we're at the beginning)
-    let start = if raw_start == 0 {
-        0
-    } else {
-        // Find the next space from raw_start, then skip past it
-        text[raw_start..match_start]
-            .find(' ')
-            .map_or(raw_start, |pos| raw_start + pos + 1)
-    };
+    let match_start_char = lower_char_offset;
+    let term_char_len = term.chars().count();
+    let match_end_char = (match_start_char + term_char_len).min(char_indices.len());
 
-    // Snap end to word boundary (find last space before raw_end)
-    let end = if raw_end >= text.len() {
+    // Window in chars, not bytes.
+    let window_start_char = match_start_char.saturating_sub(window);
+    let window_end_char = (match_end_char + window).min(char_indices.len());
+
+    // Convert char positions to byte positions.
+    let start_byte = char_indices[window_start_char].0;
+    let end_byte = if window_end_char >= char_indices.len() {
         text.len()
     } else {
-        text[match_end..raw_end]
-            .rfind(' ')
-            .map_or(raw_end, |pos| match_end + pos)
+        char_indices[window_end_char].0
     };
 
-    Some(text[start..end].trim().to_string())
+    // Snap to word boundaries within the window.
+    let snippet = &text[start_byte..end_byte];
+    let trimmed = if window_start_char > 0 {
+        // Skip to first whitespace, then past it
+        snippet
+            .find(char::is_whitespace)
+            .and_then(|pos| snippet[pos..].find(|c: char| !c.is_whitespace()))
+            .map_or(snippet, |skip| {
+                &snippet[snippet.find(char::is_whitespace).unwrap() + skip..]
+            })
+    } else {
+        snippet
+    };
+
+    Some(trimmed.trim().to_string())
 }
 
 #[cfg(test)]
@@ -263,5 +279,23 @@ mod tests {
         let result = extract_prose(md);
         assert!(result.contains("First paragraph."));
         assert!(result.contains("Second paragraph."));
+    }
+
+    #[test]
+    fn context_extraction_multibyte_chars() {
+        let text = "Use the → arrow and ← arrow for navigation in the CLI";
+        let result = extract_context(text, "navigation", 10);
+        assert!(result.is_some());
+        let ctx = result.unwrap();
+        assert!(ctx.contains("navigation"));
+    }
+
+    #[test]
+    fn context_extraction_emoji() {
+        let text = "The 🔥 hot take is that OAuth tokens should expire quickly";
+        let result = extract_context(text, "OAuth", 15);
+        assert!(result.is_some());
+        let ctx = result.unwrap();
+        assert!(ctx.contains("OAuth"));
     }
 }
