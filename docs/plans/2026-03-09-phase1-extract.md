@@ -6,7 +6,7 @@
 
 **Architecture:** Fat core / thin CLI. All extraction logic lives in `colophon-core` under an `extract` module tree. The CLI crate adds an `Extract` variant to `Commands` and a thin `commands/extract.rs` that calls into core. The pipeline: walk directory -> parse markdown -> strip non-prose -> run YAKE per-doc -> run TF-IDF across corpus -> merge/score -> serialize to YAML.
 
-**Tech Stack:** `pulldown-cmark` 0.13 (markdown parsing), `keyword_extraction` 1.5 (YAKE + TF-IDF), `stop-words` 0.10 (English stop words), `walkdir` 2 (directory traversal), `serde_yaml` 0.9 (YAML output).
+**Tech Stack:** `pulldown-cmark` 0.13 (markdown parsing), `yake-rust` 1.0 (YAKE keyword extraction, MIT), hand-rolled TF-IDF (~50 lines), `walkdir` 2 (directory traversal), `serde_yaml` 0.9 (YAML output).
 
 **Test runner:** `cargo nextest run` (never `cargo test`). Doc tests: `cargo test --doc`.
 
@@ -27,9 +27,8 @@ Add to `[dependencies]` in `crates/colophon-core/Cargo.toml`:
 # Markdown parsing
 pulldown-cmark = "0.13"
 
-# Keyword extraction (YAKE + TF-IDF)
-keyword_extraction = { version = "1.5", features = ["yake", "tf_idf"] }
-stop-words = "0.10"
+# Keyword extraction (YAKE — TF-IDF is hand-rolled)
+yake-rust = { version = "1.0", default-features = false, features = ["en"] }
 
 # YAML serialization for candidates output
 serde_yaml = "0.9"

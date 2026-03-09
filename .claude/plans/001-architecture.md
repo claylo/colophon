@@ -166,11 +166,10 @@ crates/colophon/src/
 
 ```toml
 # Markdown parsing
-pulldown-cmark = "0.12"
+pulldown-cmark = "0.13"
 
-# Keyword extraction (pure Rust: YAKE, TF-IDF, TextRank, RAKE)
-keyword_extraction = { version = "1.5", features = ["yake", "tf_idf"] }
-stop-words = "0.8"
+# Keyword extraction (YAKE — TF-IDF is hand-rolled, ~50 lines)
+yake-rust = { version = "1.0", default-features = false, features = ["en"] }
 
 # YAML serialization for term database
 serde_yaml = "0.9"

@@ -17,8 +17,7 @@ allow = [
     "ISC",
     "MIT",
     "MIT-0",        # MIT No Attribution
-    "LGPL-3.0-or-later", # keyword_extraction (weak copyleft, dynamic linking safe)
-    "MPL-2.0",      # Mozilla Public License (weak copyleft, permissive for linking)
+"MPL-2.0",      # Mozilla Public License (weak copyleft, permissive for linking)
     "Zlib",
 
     # Public domain dedications
