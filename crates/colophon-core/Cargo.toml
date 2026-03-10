@@ -40,6 +40,10 @@ pulldown-cmark = "0.13"
 
 # Keyword extraction (YAKE — TF-IDF is hand-rolled)
 yake-rust = { version = "1.0", default-features = false, features = ["en"] }
+stop-words = { version = "0.10", features = ["iso", "nltk"] }
+
+# Regex for exclude_terms pattern matching
+regex = "1"
 
 # YAML serialization for candidates output
 serde_yaml = "0.9"

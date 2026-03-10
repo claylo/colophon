@@ -71,6 +71,14 @@ pub struct ExtractConfig {
     pub min_score: f64,
     /// Maximum number of candidates to emit.
     pub max_candidates: usize,
+    /// Stop word configuration for n-gram trimming and TF-IDF.
+    pub stop_words: StopWordsConfig,
+    /// How exclude_terms matches candidates: `contains` or `exact`.
+    pub exclude_terms_match: MatchMode,
+    /// Case sensitivity for exclude_terms matching.
+    pub exclude_terms_case: CaseSensitivity,
+    /// Terms to exclude from extraction results.
+    pub exclude_terms: Vec<String>,
 }
 
 impl Default for ExtractConfig {
@@ -79,8 +87,66 @@ impl Default for ExtractConfig {
             ngram_range: [1, 3],
             min_score: 0.1,
             max_candidates: 500,
+            stop_words: StopWordsConfig::default(),
+            exclude_terms_match: MatchMode::default(),
+            exclude_terms_case: CaseSensitivity::default(),
+            exclude_terms: Vec::new(),
         }
     }
+}
+
+/// Stop word list configuration.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct StopWordsConfig {
+    /// Which stop word corpus to use: `iso` or `nltk`.
+    pub source: StopWordSource,
+    /// Language code (ISO 639-1, e.g. "en", "de", "fr").
+    pub language: String,
+}
+
+impl Default for StopWordsConfig {
+    fn default() -> Self {
+        Self {
+            source: StopWordSource::default(),
+            language: "en".to_string(),
+        }
+    }
+}
+
+/// Stop word corpus source.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum StopWordSource {
+    /// Stopwords ISO — 60+ languages.
+    #[default]
+    Iso,
+    /// NLTK stop words — 23 languages, different coverage.
+    Nltk,
+}
+
+/// How exclusion patterns match against candidate terms.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum MatchMode {
+    /// Candidate is excluded if it contains the exclusion phrase as a substring.
+    #[default]
+    Contains,
+    /// Candidate is excluded only if it matches the exclusion phrase exactly.
+    Exact,
+    /// Each exclude_terms entry is a regex pattern tested against the full candidate term.
+    Regex,
+}
+
+/// Case sensitivity mode for string matching.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum CaseSensitivity {
+    /// Exact case match.
+    #[default]
+    Sensitive,
+    /// Case-insensitive match.
+    Insensitive,
 }
 
 /// The configuration for colophon.

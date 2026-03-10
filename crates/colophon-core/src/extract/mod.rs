@@ -14,7 +14,7 @@ use crate::config::{ExtractConfig, SourceConfig};
 use crate::error::{ExtractError, ExtractResult};
 
 use self::candidates::{Candidate, CandidateLocation, CandidatesFile};
-use self::keywords::{extract_tfidf, extract_yake};
+use self::keywords::{extract_tfidf, extract_yake, get_stop_words, trim_stopwords};
 use self::markdown::{extract_context, extract_prose};
 
 /// A parsed document ready for keyword extraction.
@@ -56,6 +56,9 @@ pub fn run(source: &SourceConfig, extract: &ExtractConfig) -> ExtractResult<Cand
 
     let doc_count = documents.len();
 
+    // Load stop words once from config.
+    let stop_words = get_stop_words(&extract.stop_words);
+
     // Accumulator: lowercase term -> (best_score, original_term, locations).
     let mut term_map: HashMap<String, (f64, String, Vec<CandidateLocation>)> = HashMap::new();
 
@@ -68,8 +71,13 @@ pub fn run(source: &SourceConfig, extract: &ExtractConfig) -> ExtractResult<Cand
             if kw.score < extract.min_score {
                 continue;
             }
-            let key = kw.term.to_lowercase();
-            let location = extract_context(&doc.prose, &kw.term, 60)
+            // Trim stop words from n-gram edges: "covers ZDR covers" → "ZDR"
+            let trimmed = trim_stopwords(&kw.term, &stop_words);
+            if trimmed.is_empty() {
+                continue;
+            }
+            let key = trimmed.to_lowercase();
+            let location = extract_context(&doc.prose, &trimmed, 60)
                 .map(|ctx| CandidateLocation {
                     file: doc.relative_path.clone(),
                     context: ctx,
@@ -81,10 +89,10 @@ pub fn run(source: &SourceConfig, extract: &ExtractConfig) -> ExtractResult<Cand
 
             let entry = term_map
                 .entry(key)
-                .or_insert_with(|| (0.0_f64, kw.term.clone(), Vec::new()));
+                .or_insert_with(|| (0.0_f64, trimmed.clone(), Vec::new()));
             if kw.score > entry.0 {
                 entry.0 = kw.score;
-                entry.1 = kw.term.clone();
+                entry.1 = trimmed.clone();
             }
             entry.2.push(location);
         }
@@ -92,7 +100,7 @@ pub fn run(source: &SourceConfig, extract: &ExtractConfig) -> ExtractResult<Cand
 
     // 4. Corpus-wide TF-IDF.
     let prose_texts: Vec<String> = documents.iter().map(|d| d.prose.clone()).collect();
-    let tfidf_keywords = extract_tfidf(&prose_texts, extract.max_candidates);
+    let tfidf_keywords = extract_tfidf(&prose_texts, &stop_words, extract.max_candidates);
 
     for kw in tfidf_keywords {
         if kw.score < extract.min_score {
@@ -129,9 +137,50 @@ pub fn run(source: &SourceConfig, extract: &ExtractConfig) -> ExtractResult<Cand
         }
     }
 
-    // 5. Build candidate list, sort by score descending, truncate.
+    // 5. Build candidate list, filter excluded terms, sort, truncate.
+    use crate::config::{CaseSensitivity, MatchMode};
+
+    // Pre-compile regex patterns if in regex mode.
+    let compiled_regexes: Vec<regex::Regex> = if extract.exclude_terms_match == MatchMode::Regex {
+        extract
+            .exclude_terms
+            .iter()
+            .filter_map(|pattern| {
+                let pat = match extract.exclude_terms_case {
+                    CaseSensitivity::Insensitive => format!("(?i){pattern}"),
+                    CaseSensitivity::Sensitive => pattern.clone(),
+                };
+                match regex::Regex::new(&pat) {
+                    Ok(re) => Some(re),
+                    Err(e) => {
+                        tracing::warn!(pattern, error = %e, "invalid exclude_terms regex, skipping");
+                        None
+                    }
+                }
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    let is_excluded = |term: &str| match extract.exclude_terms_match {
+        MatchMode::Regex => compiled_regexes.iter().any(|re| re.is_match(term)),
+        _ => extract.exclude_terms.iter().any(|excl| {
+            let (t, e) = match extract.exclude_terms_case {
+                CaseSensitivity::Sensitive => (term.to_string(), excl.clone()),
+                CaseSensitivity::Insensitive => (term.to_lowercase(), excl.to_lowercase()),
+            };
+            match extract.exclude_terms_match {
+                MatchMode::Contains => t.contains(&e),
+                MatchMode::Exact => t == e,
+                MatchMode::Regex => unreachable!(),
+            }
+        }),
+    };
+
     let mut candidates: Vec<Candidate> = term_map
         .into_values()
+        .filter(|(_, term, _)| !is_excluded(term))
         .map(|(score, term, locations)| Candidate {
             term,
             score,
@@ -378,6 +427,38 @@ mod tests {
         let yaml = file.to_yaml().expect("should serialize");
         assert!(yaml.contains("version: 1"));
         assert!(yaml.contains("candidates:"));
+    }
+
+    #[test]
+    fn pipeline_excludes_terms() {
+        let tmp = TempDir::new().unwrap();
+        write_test_corpus(tmp.path());
+
+        let source = SourceConfig {
+            dir: tmp.path().to_string_lossy().to_string(),
+            extensions: vec!["md".to_string()],
+            exclude: Vec::new(),
+        };
+
+        // First run without exclusions to find a term that exists.
+        let baseline = run(&source, &ExtractConfig::default()).unwrap();
+        assert!(!baseline.candidates.is_empty());
+        let first_term = baseline.candidates[0].term.clone();
+
+        // Now exclude that term.
+        let extract_cfg = ExtractConfig {
+            exclude_terms: vec![first_term.clone()],
+            ..ExtractConfig::default()
+        };
+        let filtered = run(&source, &extract_cfg).unwrap();
+        let has_excluded = filtered
+            .candidates
+            .iter()
+            .any(|c| c.term.to_lowercase() == first_term.to_lowercase());
+        assert!(
+            !has_excluded,
+            "excluded term '{first_term}' should not appear"
+        );
     }
 
     #[test]

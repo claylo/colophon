@@ -243,8 +243,10 @@ dependencies = [
  "directories",
  "figment",
  "pulldown-cmark",
+ "regex",
  "serde",
  "serde_yaml",
+ "stop-words",
  "tempfile",
  "thiserror",
  "tracing",
@@ -904,6 +906,15 @@ name = "smallvec"
 version = "1.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
+
+[[package]]
+name = "stop-words"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d68df56303396bcfb639455b3c166804aeb7994005010aab5e9e8a1277b8871d"
+dependencies = [
+ "serde_json",
+]
 
 [[package]]
 name = "streaming-stats"

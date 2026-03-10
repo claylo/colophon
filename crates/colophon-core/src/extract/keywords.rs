@@ -58,15 +58,20 @@ pub fn extract_yake(text: &str, ngrams: usize, max_keywords: usize) -> Vec<Score
         .collect()
 }
 
-/// Basic English stop words for TF-IDF tokenization.
-const STOP_WORDS: &[&str] = &[
-    "a", "an", "and", "are", "as", "at", "be", "been", "but", "by", "can", "could", "do", "does",
-    "did", "for", "from", "had", "has", "have", "he", "her", "his", "how", "i", "if", "in", "into",
-    "is", "it", "its", "may", "more", "most", "must", "my", "no", "nor", "not", "of", "on", "or",
-    "our", "out", "own", "shall", "she", "should", "so", "some", "such", "than", "that", "the",
-    "their", "them", "then", "there", "these", "they", "this", "to", "too", "us", "very", "was",
-    "we", "were", "what", "when", "which", "while", "who", "will", "with", "would", "you", "your",
-];
+use crate::config::{StopWordSource, StopWordsConfig};
+
+/// Get stop words based on configuration.
+pub fn get_stop_words(config: &StopWordsConfig) -> Vec<String> {
+    let code = match config.source {
+        // ISO uses bare language codes, NLTK uses "nltk_" prefix
+        StopWordSource::Iso => config.language.clone(),
+        StopWordSource::Nltk => format!("nltk_{}", config.language),
+    };
+    stop_words::get(&code)
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect()
+}
 
 /// Tokenize text into lowercase words with punctuation stripped.
 fn tokenize(text: &str, stop: &HashSet<&str>) -> Vec<String> {
@@ -85,12 +90,17 @@ fn tokenize(text: &str, stop: &HashSet<&str>) -> Vec<String> {
 ///
 /// Returns up to `max_keywords` results with scores normalized so that
 /// higher values indicate greater relevance.
-pub fn extract_tfidf(documents: &[String], max_keywords: usize) -> Vec<ScoredKeyword> {
+pub fn extract_tfidf(
+    documents: &[String],
+    stop_words: &[String],
+    max_keywords: usize,
+) -> Vec<ScoredKeyword> {
     if documents.is_empty() {
         return Vec::new();
     }
 
-    let stop: HashSet<&str> = STOP_WORDS.iter().copied().collect();
+    let stop_list = stop_words;
+    let stop: HashSet<&str> = stop_list.iter().map(String::as_str).collect();
     let total_docs = documents.len() as f64;
 
     // Per-document term frequencies.
@@ -168,9 +178,48 @@ pub fn extract_tfidf(documents: &[String], max_keywords: usize) -> Vec<ScoredKey
         .collect()
 }
 
+/// Trim stop words from the leading and trailing edges of an n-gram.
+///
+/// "covers ZDR covers" → "ZDR"
+/// "the OAuth protocol" → "OAuth protocol"
+/// "authentication" → "authentication" (single words pass through)
+pub fn trim_stopwords(term: &str, stop_words: &[String]) -> String {
+    let stop: HashSet<String> = stop_words.iter().map(|w| w.to_lowercase()).collect();
+
+    let words: Vec<&str> = term.split_whitespace().collect();
+    if words.len() <= 1 {
+        return term.to_string();
+    }
+
+    // Trim from the left.
+    let start = words
+        .iter()
+        .position(|w| !stop.contains(&w.to_lowercase()))
+        .unwrap_or(0);
+
+    // Trim from the right.
+    let end = words
+        .iter()
+        .rposition(|w| !stop.contains(&w.to_lowercase()))
+        .map_or(words.len(), |i| i + 1);
+
+    if start >= end {
+        // All words are stop words — return the original.
+        return term.to_string();
+    }
+
+    words[start..end].join(" ")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use crate::config::StopWordsConfig;
+
+    fn sw() -> Vec<String> {
+        get_stop_words(&StopWordsConfig::default())
+    }
 
     fn sample_text() -> &'static str {
         "OAuth is an open standard for token-based authorization. \
@@ -214,7 +263,7 @@ mod tests {
             "Authentication verifies user identity using passwords or tokens.".to_string(),
             "Rate limiting protects APIs from excessive requests and abuse.".to_string(),
         ];
-        let keywords = extract_tfidf(&docs, 10);
+        let keywords = extract_tfidf(&docs, &sw(), 10);
         assert!(!keywords.is_empty());
     }
 
@@ -224,7 +273,7 @@ mod tests {
             "OAuth provides delegated authorization.".to_string(),
             "Authentication verifies identity.".to_string(),
         ];
-        let keywords = extract_tfidf(&docs, 10);
+        let keywords = extract_tfidf(&docs, &sw(), 10);
         for kw in &keywords {
             assert!(
                 (0.0..=1.0).contains(&kw.score),
@@ -237,14 +286,14 @@ mod tests {
 
     #[test]
     fn tfidf_empty_corpus() {
-        let keywords = extract_tfidf(&[], 10);
+        let keywords = extract_tfidf(&[], &sw(), 10);
         assert!(keywords.is_empty());
     }
 
     #[test]
     fn tfidf_single_document() {
         let docs = vec!["OAuth provides delegated authorization for web services.".to_string()];
-        let keywords = extract_tfidf(&docs, 10);
+        let keywords = extract_tfidf(&docs, &sw(), 10);
         // With one doc, IDF is 0 for all terms (ln(1/1)=0), so no keywords
         // OR the implementation handles single-doc gracefully
         // Either empty or contains terms is fine, just don't panic
@@ -259,7 +308,7 @@ mod tests {
             "Authentication verifies user identity for APIs.".to_string(),
             "Rate limiting protects services from abuse.".to_string(),
         ];
-        let keywords = extract_tfidf(&docs, 20);
+        let keywords = extract_tfidf(&docs, &sw(), 20);
         let oauth_score = keywords.iter().find(|k| k.term == "oauth").map(|k| k.score);
         let apis_score = keywords.iter().find(|k| k.term == "apis").map(|k| k.score);
         if let (Some(os), Some(as_)) = (oauth_score, apis_score) {
@@ -268,5 +317,44 @@ mod tests {
                 "oauth ({os}) should score higher than apis ({as_}) — appears in fewer docs"
             );
         }
+    }
+
+    #[test]
+    fn trim_stopwords_leading() {
+        let sw = sw();
+        assert_eq!(trim_stopwords("the OAuth protocol", &sw), "OAuth protocol");
+    }
+
+    #[test]
+    fn trim_stopwords_trailing() {
+        let sw = sw();
+        assert_eq!(trim_stopwords("OAuth is", &sw), "OAuth");
+    }
+
+    #[test]
+    fn trim_stopwords_both_edges() {
+        let sw = sw();
+        // "covers" may not be in ISO stop words, but "the" and "is" are
+        assert_eq!(trim_stopwords("the ZDR is", &sw), "ZDR");
+    }
+
+    #[test]
+    fn trim_stopwords_single_word_passthrough() {
+        let sw = sw();
+        assert_eq!(trim_stopwords("authentication", &sw), "authentication");
+    }
+
+    #[test]
+    fn trim_stopwords_no_stop_words() {
+        let sw = sw();
+        assert_eq!(trim_stopwords("OAuth protocol", &sw), "OAuth protocol");
+    }
+
+    #[test]
+    fn trim_stopwords_all_stop_words() {
+        let sw = sw();
+        // If everything is a stop word, return original
+        let result = trim_stopwords("the and or", &sw);
+        assert_eq!(result, "the and or");
     }
 }
