@@ -137,7 +137,58 @@ pub fn run(source: &SourceConfig, extract: &ExtractConfig) -> ExtractResult<Cand
         }
     }
 
-    // 5. Build candidate list, filter excluded terms, sort, truncate.
+    // 5. Consolidate known terms — absorb variants and noisy n-grams.
+    if !extract.known_terms.is_empty() {
+        let mut absorbed_keys: Vec<String> = Vec::new();
+        for known in &extract.known_terms {
+            let canonical_key = known.term.to_lowercase();
+
+            // Collect all keys that match the canonical term or any variant (as substring).
+            let matching_keys: Vec<String> = term_map
+                .keys()
+                .filter(|key| {
+                    // Does this candidate contain the known term or any variant?
+                    let all_forms: Vec<String> = std::iter::once(known.term.to_lowercase())
+                        .chain(known.variants.iter().map(|v| v.to_lowercase()))
+                        .collect();
+                    all_forms.iter().any(|form| key.contains(form.as_str()))
+                })
+                .cloned()
+                .collect();
+
+            if matching_keys.is_empty() {
+                continue;
+            }
+
+            // Merge all matching entries into the canonical term.
+            let mut best_score = 0.0_f64;
+            let mut merged_locations: Vec<CandidateLocation> = Vec::new();
+
+            for key in &matching_keys {
+                if let Some((score, _, locations)) = term_map.remove(key) {
+                    best_score = best_score.max(score);
+                    for loc in locations {
+                        if !merged_locations
+                            .iter()
+                            .any(|existing| existing.file == loc.file)
+                        {
+                            merged_locations.push(loc);
+                        }
+                    }
+                    if *key != canonical_key {
+                        absorbed_keys.push(key.clone());
+                    }
+                }
+            }
+
+            term_map.insert(
+                canonical_key,
+                (best_score, known.term.clone(), merged_locations),
+            );
+        }
+    }
+
+    // 6. Build candidate list, filter excluded terms, sort, truncate.
     use crate::config::{CaseSensitivity, MatchMode};
 
     // Pre-compile regex patterns if in regex mode.
@@ -188,12 +239,16 @@ pub fn run(source: &SourceConfig, extract: &ExtractConfig) -> ExtractResult<Cand
         })
         .collect();
 
+    // Sort by score descending to pick top candidates, then truncate.
     candidates.sort_by(|a, b| {
         b.score
             .partial_cmp(&a.score)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
     candidates.truncate(extract.max_candidates);
+
+    // Final sort: alphabetical by term (case-insensitive) for readability.
+    candidates.sort_by(|a, b| a.term.to_lowercase().cmp(&b.term.to_lowercase()));
 
     // 6. Timestamp.
     let generated = format_timestamp(SystemTime::now());
@@ -389,7 +444,7 @@ mod tests {
     }
 
     #[test]
-    fn pipeline_candidates_sorted_by_score() {
+    fn pipeline_candidates_sorted_alphabetically() {
         let tmp = TempDir::new().unwrap();
         write_test_corpus(tmp.path());
 
@@ -402,12 +457,10 @@ mod tests {
         let file = run(&source, &ExtractConfig::default()).unwrap();
         for window in file.candidates.windows(2) {
             assert!(
-                window[0].score >= window[1].score,
-                "{} ({}) should be >= {} ({})",
+                window[0].term.to_lowercase() <= window[1].term.to_lowercase(),
+                "'{}' should come before '{}'",
                 window[0].term,
-                window[0].score,
                 window[1].term,
-                window[1].score,
             );
         }
     }

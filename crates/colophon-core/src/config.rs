@@ -79,6 +79,8 @@ pub struct ExtractConfig {
     pub exclude_terms_case: CaseSensitivity,
     /// Terms to exclude from extraction results.
     pub exclude_terms: Vec<String>,
+    /// Known terms with optional variants — consolidates noisy n-grams.
+    pub known_terms: Vec<KnownTerm>,
 }
 
 impl Default for ExtractConfig {
@@ -91,8 +93,22 @@ impl Default for ExtractConfig {
             exclude_terms_match: MatchMode::default(),
             exclude_terms_case: CaseSensitivity::default(),
             exclude_terms: Vec::new(),
+            known_terms: Vec::new(),
         }
     }
+}
+
+/// A known term with optional variant spellings.
+///
+/// If a candidate contains a known term or one of its variants,
+/// the candidate is replaced with the canonical term.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct KnownTerm {
+    /// The canonical display form of the term.
+    pub term: String,
+    /// Alternative spellings or abbreviations that map to this term.
+    #[serde(default)]
+    pub variants: Vec<String>,
 }
 
 /// Stop word list configuration.
