@@ -3,7 +3,7 @@
 
 use anyhow::Context;
 use clap::Parser;
-use colophon::{commands, Cli, Commands};
+use colophon::{Cli, Commands, commands};
 use colophon_core::config::ConfigLoader;
 use tracing::debug;
 

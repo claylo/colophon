@@ -53,7 +53,13 @@ site/node_modules/
 .commit.md
 commit.txt
 
+# private session memory (never commit)
+PRIVATE_MEMORY.md
+
 # scratch script and scratch directory
 # for little tests, scripts or notes
 scratch
 scratch/
+
+.colophon.yaml
+colophon-candidates.yaml
