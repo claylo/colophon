@@ -19,7 +19,7 @@ use crate::error::CurateError;
 use crate::extract::candidates::CandidatesFile;
 
 use super::cost::TokenUsage;
-use super::terms::ClaudeOutput;
+use super::terms::{ClaudeDeltaOutput, ClaudeOutput};
 
 /// The built-in system prompt for curation (base, before input format suffix).
 ///
@@ -57,8 +57,6 @@ const INPUT_FORMAT_FULL: &str = "\n\nInput format: YAML with fields per candidat
 const SCHEMA_JSON: &str = include_str!("../../../../config/curate-schema.json");
 
 /// JSON Schema for the curate delta output (incremental mode).
-// Used by incremental invoke path (Task 6) and tests.
-#[allow(dead_code)]
 const DELTA_SCHEMA_JSON: &str = include_str!("../../../../config/curate-delta-schema.json");
 
 /// Default instruction appended to stdin payload.
@@ -165,16 +163,12 @@ fn build_stdin_payload(
 }
 
 /// The incremental system prompt base.
-// Used by build_incremental_system_prompt (wired in Task 6) and tests.
-#[allow(dead_code)]
 const DEFAULT_INCREMENTAL_SYSTEM_PROMPT_BASE: &str = r#"You are a professional book indexer updating an existing back-of-book index with new candidate terms.
 
 EXISTING INDEX (for context — do NOT regenerate these):
 "#;
 
 /// Instructions appended after the existing index in incremental mode.
-// Used by build_incremental_system_prompt (wired in Task 6) and tests.
-#[allow(dead_code)]
 const INCREMENTAL_INSTRUCTIONS: &str = r#"
 Instructions:
 1. For each new candidate: add as new term, merge as alias of existing, or discard
@@ -185,8 +179,6 @@ Instructions:
 6. Every modification MUST include a reason"#;
 
 /// Build the incremental system prompt including the compact existing index.
-// Called by system_prompt_for_incremental and directly in tests.
-#[allow(dead_code)]
 pub(super) fn build_incremental_system_prompt(
     config: &CurateConfig,
     compact_index: &str,
@@ -210,8 +202,6 @@ pub(super) fn build_incremental_system_prompt(
 }
 
 /// Build the incremental stdin payload: new candidates + stale terms.
-// Called by stdin_payload_for_incremental and directly in tests.
-#[allow(dead_code)]
 pub(super) fn build_incremental_stdin_payload(
     config: &CurateConfig,
     new_candidates_yaml: &str,
@@ -239,15 +229,11 @@ pub(super) fn build_incremental_stdin_payload(
 }
 
 /// Return the incremental system prompt for cost estimation.
-// Wired in Task 6 (curate/mod.rs incremental path).
-#[allow(dead_code)]
 pub(super) fn system_prompt_for_incremental(config: &CurateConfig, compact_index: &str) -> String {
     build_incremental_system_prompt(config, compact_index)
 }
 
 /// Return the incremental stdin payload for cost estimation.
-// Wired in Task 6 (curate/mod.rs incremental path).
-#[allow(dead_code)]
 pub(super) fn stdin_payload_for_incremental(
     config: &CurateConfig,
     new_candidates_yaml: &str,
@@ -257,8 +243,6 @@ pub(super) fn stdin_payload_for_incremental(
 }
 
 /// Return the delta JSON schema string.
-// Wired in Task 6 (curate/mod.rs incremental invoke path).
-#[allow(dead_code)]
 pub(super) const fn delta_schema_json() -> &'static str {
     DELTA_SCHEMA_JSON
 }
@@ -611,6 +595,287 @@ fn find_claude() -> Result<String, CurateError> {
     which::which("claude")
         .map(|p| p.to_string_lossy().to_string())
         .map_err(|_| CurateError::ClaudeNotFound)
+}
+
+/// Result of an incremental Claude CLI invocation.
+pub(super) struct IncrementalInvokeResult {
+    /// Parsed delta output from Claude.
+    pub output: ClaudeDeltaOutput,
+    /// Accumulated thinking output across all turns.
+    pub thinking: String,
+    /// Editorial summary text.
+    pub editorial: String,
+    /// Number of API turns used.
+    pub turns: usize,
+    /// Number of thinking token deltas received.
+    pub thinking_tokens: usize,
+    /// Actual token usage accumulated from stream events.
+    pub usage: TokenUsage,
+}
+
+/// Invoke the Claude CLI in incremental mode with the delta schema.
+pub(super) fn invoke_incremental(
+    config: &CurateConfig,
+    new_candidates_yaml: &str,
+    compact_index: &str,
+    stale_terms: &[String],
+    extra_args: &[String],
+    progress: &ProgressBar,
+) -> Result<IncrementalInvokeResult, CurateError> {
+    let claude_path = find_claude()?;
+
+    let system_prompt = build_incremental_system_prompt(config, compact_index);
+    let stdin_payload = build_incremental_stdin_payload(config, new_candidates_yaml, stale_terms);
+
+    let no_plugins_dir = create_no_plugins_dir()?;
+    let settings_file = write_settings_file(&config.claude_settings)?;
+
+    let plugin_dir_str = no_plugins_dir.path().to_string_lossy().to_string();
+    let settings_path_str = settings_file.path().to_string_lossy().to_string();
+
+    let mut cmd = Command::new(&claude_path);
+    cmd.arg("--print")
+        .arg("--json-schema")
+        .arg(DELTA_SCHEMA_JSON)
+        .arg("--model")
+        .arg(&config.model)
+        .arg("--system-prompt")
+        .arg(&system_prompt)
+        .arg("--output-format")
+        .arg("stream-json")
+        .arg("--include-partial-messages")
+        .arg("--verbose")
+        .arg("--tools")
+        .arg("")
+        .arg("--no-session-persistence")
+        .arg("--disable-slash-commands")
+        .arg("--effort")
+        .arg(&config.effort)
+        .arg("--plugin-dir")
+        .arg(&plugin_dir_str)
+        .arg("--settings")
+        .arg(&settings_path_str)
+        .arg("--setting-sources")
+        .arg("local");
+
+    for arg in extra_args {
+        cmd.arg(arg);
+    }
+
+    cmd.env("CLAUDECODE", "")
+        .env(
+            "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
+            config.max_output_tokens.to_string(),
+        )
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    tracing::debug!(
+        model = %config.model,
+        effort = %config.effort,
+        payload_len = stdin_payload.len(),
+        "invoking claude CLI (incremental mode)"
+    );
+
+    let mut child = cmd.spawn().map_err(|e| CurateError::ClaudeFailed {
+        exit_code: None,
+        stderr: format!("failed to spawn claude: {e}"),
+    })?;
+
+    {
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| CurateError::ClaudeFailed {
+                exit_code: None,
+                stderr: "failed to open claude stdin".to_string(),
+            })?;
+        stdin
+            .write_all(stdin_payload.as_bytes())
+            .map_err(|e| CurateError::ClaudeFailed {
+                exit_code: None,
+                stderr: format!("stdin write failed: {e}"),
+            })?;
+    }
+
+    let stderr_pipe = child
+        .stderr
+        .take()
+        .ok_or_else(|| CurateError::ClaudeFailed {
+            exit_code: None,
+            stderr: "failed to open claude stderr".to_string(),
+        })?;
+    let stderr_thread = std::thread::spawn(move || {
+        let mut buf = String::new();
+        let _ = std::io::Read::read_to_string(&mut BufReader::new(stderr_pipe), &mut buf);
+        buf
+    });
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| CurateError::ClaudeFailed {
+            exit_code: None,
+            stderr: "failed to open claude stdout".to_string(),
+        })?;
+
+    let result = parse_delta_stream(stdout, progress)?;
+
+    let status = child.wait().map_err(|e| CurateError::ClaudeFailed {
+        exit_code: None,
+        stderr: format!("failed to wait for claude: {e}"),
+    })?;
+
+    let captured_stderr = stderr_thread.join().unwrap_or_default();
+    if !captured_stderr.is_empty() {
+        tracing::debug!(stderr_len = captured_stderr.len(), "claude stderr captured");
+    }
+
+    if !status.success() && result.is_none() {
+        return Err(CurateError::ClaudeFailed {
+            exit_code: status.code(),
+            stderr: captured_stderr,
+        });
+    }
+
+    result.ok_or_else(|| CurateError::ParseResponse {
+        detail: "no valid structured output found in incremental stream".to_string(),
+    })
+}
+
+/// Parse streaming JSONL for incremental mode (delta schema).
+fn parse_delta_stream(
+    stdout: impl std::io::Read,
+    progress: &ProgressBar,
+) -> Result<Option<IncrementalInvokeResult>, CurateError> {
+    let reader = BufReader::new(stdout);
+
+    let mut thinking = String::new();
+    let mut editorial = String::new();
+    let mut current_turn_json = String::new();
+    let mut last_valid_output: Option<ClaudeDeltaOutput> = None;
+    let mut thinking_deltas: usize = 0;
+    let mut json_bytes: usize = 0;
+    let mut turn_count: usize = 0;
+    let mut usage = TokenUsage::default();
+
+    progress.set_message("Starting incremental...");
+    progress.enable_steady_tick(Duration::from_millis(120));
+
+    for line in reader.lines() {
+        let line = line.map_err(|e| CurateError::ClaudeFailed {
+            exit_code: None,
+            stderr: format!("failed to read stream: {e}"),
+        })?;
+
+        let event: serde_json::Value = match serde_json::from_str(&line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        if event["type"] != "stream_event" {
+            continue;
+        }
+
+        let evt = &event["event"];
+        match evt["type"].as_str() {
+            Some("message_start") => {
+                turn_count += 1;
+                current_turn_json.clear();
+
+                if let Some(msg_usage) = evt["message"]["usage"].as_object() {
+                    if let Some(n) = msg_usage.get("input_tokens").and_then(|v| v.as_u64()) {
+                        usage.input_tokens += n as usize;
+                    }
+                    if let Some(n) = msg_usage
+                        .get("cache_creation_input_tokens")
+                        .and_then(|v| v.as_u64())
+                    {
+                        usage.cache_creation_input_tokens += n as usize;
+                    }
+                    if let Some(n) = msg_usage
+                        .get("cache_read_input_tokens")
+                        .and_then(|v| v.as_u64())
+                    {
+                        usage.cache_read_input_tokens += n as usize;
+                    }
+                }
+            }
+            Some("content_block_delta") => match evt["delta"]["type"].as_str() {
+                Some("thinking_delta") => {
+                    if let Some(text) = evt["delta"]["thinking"].as_str() {
+                        thinking.push_str(text);
+                        thinking_deltas += 1;
+                        progress.set_message(format!("Thinking... ({thinking_deltas} tokens)"));
+                    }
+                }
+                Some("text_delta") => {
+                    if let Some(text) = evt["delta"]["text"].as_str() {
+                        editorial.push_str(text);
+                    }
+                }
+                Some("input_json_delta") => {
+                    if let Some(partial) = evt["delta"]["partial_json"].as_str() {
+                        current_turn_json.push_str(partial);
+                        json_bytes += partial.len();
+                        progress.set_message(format!("Generating delta... ({json_bytes} bytes)"));
+                    }
+                }
+                _ => {}
+            },
+            Some("message_delta") => {
+                if let Some(n) = evt["usage"]["output_tokens"].as_u64() {
+                    usage.output_tokens += n as usize;
+                }
+            }
+            Some("message_stop") => {
+                if !current_turn_json.is_empty() {
+                    match serde_json::from_str::<ClaudeDeltaOutput>(&current_turn_json) {
+                        Ok(output) => {
+                            tracing::debug!(
+                                turn = turn_count,
+                                additions = output.additions.len(),
+                                modifications = output.modifications.len(),
+                                removals = output.removals.len(),
+                                "valid delta output from turn"
+                            );
+                            last_valid_output = Some(output);
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                turn = turn_count,
+                                error = %e,
+                                "failed to parse delta JSON"
+                            );
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if let Some(ref output) = last_valid_output {
+        progress.finish_with_message(format!(
+            "Delta: +{} ~{} -{} ({} turns)",
+            output.additions.len(),
+            output.modifications.len(),
+            output.removals.len(),
+            turn_count,
+        ));
+    } else {
+        progress.finish_with_message("No valid delta output");
+    }
+
+    Ok(last_valid_output.map(|output| IncrementalInvokeResult {
+        output,
+        thinking,
+        editorial,
+        turns: turn_count,
+        thinking_tokens: thinking_deltas,
+        usage,
+    }))
 }
 
 #[cfg(test)]

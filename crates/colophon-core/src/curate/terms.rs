@@ -115,7 +115,6 @@ pub(crate) struct ClaudeSuggested {
 ///
 /// Matches the JSON Schema in `config/curate-delta-schema.yaml`.
 /// Contains only changes — existing unchanged terms are not included.
-#[allow(dead_code)] // used by merge logic in Task 4
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct ClaudeDeltaOutput {
     /// New terms to add.
@@ -130,7 +129,6 @@ pub(crate) struct ClaudeDeltaOutput {
 }
 
 /// A modification to an existing term. Only changed fields are present.
-#[allow(dead_code)] // used by merge logic in Task 4
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct DeltaModification {
     /// Exact name of the existing term being modified.
@@ -148,7 +146,6 @@ pub(crate) struct DeltaModification {
 }
 
 /// A term to remove from the index.
-#[allow(dead_code)] // used by merge logic in Task 4
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct DeltaRemoval {
     /// Exact name of the term to remove.

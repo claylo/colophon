@@ -132,7 +132,6 @@ pub struct MergeLog {
 ///
 /// Mutates `terms` in place. Order: remove → modify → add → suggested.
 /// Returns a log of what changed.
-#[allow(dead_code)] // wired in Task 6
 pub(crate) fn merge_delta(terms: &mut Vec<CuratedTerm>, delta: &ClaudeDeltaOutput) -> MergeLog {
     let mut log = MergeLog::default();
 
