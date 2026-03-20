@@ -1,0 +1,117 @@
+# JSON Schema for colophon curate incremental (delta) output.
+#
+# This schema is used when --incremental is passed. Claude returns only
+# changes to the existing index, not the full term database.
+#
+# Converted to JSON via: yj < config/curate-delta-schema.yaml > config/curate-delta-schema.json
+
+type: object
+required: [additions, modifications, removals, suggested]
+additionalProperties: false
+
+properties:
+  additions:
+    description: >
+      New terms to add to the index. Each entry follows the same structure
+      as full-mode terms. Aliases MUST be exact strings from the new
+      candidate input for location mapping.
+    type: array
+    items:
+      type: object
+      required: [term, definition]
+      additionalProperties: false
+      properties:
+        term:
+          description: Canonical display form, properly cased.
+          type: string
+        definition:
+          description: One-sentence glossary definition (~20-30 words).
+          type: string
+        parent:
+          description: Parent term for hierarchy (omit if top-level).
+          type: string
+        aliases:
+          description: Other surface forms from the candidate input.
+          type: array
+          items:
+            type: string
+        see_also:
+          description: Related terms (must exist in output or existing index).
+          type: array
+          items:
+            type: string
+        main_files:
+          description: Files with substantive discussion of this term.
+          type: array
+          items:
+            type: string
+
+  modifications:
+    description: >
+      Changes to existing terms. Only include fields that are changing.
+      A reason is REQUIRED to justify each modification.
+    type: array
+    items:
+      type: object
+      required: [term, reason]
+      additionalProperties: false
+      properties:
+        term:
+          description: Exact name of the existing term being modified.
+          type: string
+        definition:
+          description: Updated definition (only if changed).
+          type: string
+        parent:
+          description: New parent (only if reparented).
+          type: string
+        aliases:
+          description: Updated alias list (replaces existing).
+          type: array
+          items:
+            type: string
+        see_also:
+          description: Updated see_also list (replaces existing).
+          type: array
+          items:
+            type: string
+        reason:
+          description: Why this modification is needed.
+          type: string
+
+  removals:
+    description: >
+      Terms to remove from the index. Only for terms that are genuinely
+      stale — no longer relevant to the corpus.
+    type: array
+    items:
+      type: object
+      required: [term, reason]
+      additionalProperties: false
+      properties:
+        term:
+          description: Exact name of the term to remove.
+          type: string
+        reason:
+          description: Why this term should be removed.
+          type: string
+
+  suggested:
+    description: >
+      New terms Claude spotted that the extraction missed. Same as
+      full-mode suggested — no locations, no aliases.
+    type: array
+    items:
+      type: object
+      required: [term, definition]
+      additionalProperties: false
+      properties:
+        term:
+          description: Canonical display form.
+          type: string
+        definition:
+          description: One-sentence glossary definition.
+          type: string
+        parent:
+          description: Parent term for hierarchy (omit if top-level).
+          type: string
