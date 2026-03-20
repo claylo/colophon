@@ -93,7 +93,7 @@ fn escape_typst(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for ch in text.chars() {
         match ch {
-            '@' | '#' | '<' | '$' => {
+            '@' | '#' | '<' | '$' | '_' | '*' => {
                 out.push('\\');
                 out.push(ch);
             }
