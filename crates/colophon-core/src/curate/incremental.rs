@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use crate::curate::terms::CuratedTermsFile;
+use crate::curate::terms::{ClaudeDeltaOutput, CuratedTerm, CuratedTermsFile};
 use crate::extract::candidates::{Candidate, CandidatesFile};
 
 /// Diff between fresh extraction candidates and an existing curated term database.
@@ -115,10 +115,103 @@ pub fn format_compact_index(existing: &CuratedTermsFile) -> String {
     out
 }
 
+/// Log of what merge_delta changed.
+#[derive(Debug, Default)]
+pub struct MergeLog {
+    /// Terms removed.
+    pub removed: usize,
+    /// Terms modified.
+    pub modified: usize,
+    /// Terms added.
+    pub added: usize,
+    /// Suggested terms added.
+    pub suggested: usize,
+}
+
+/// Apply a delta response to an existing term list.
+///
+/// Mutates `terms` in place. Order: remove → modify → add → suggested.
+/// Returns a log of what changed.
+#[allow(dead_code)] // wired in Task 6
+pub(crate) fn merge_delta(terms: &mut Vec<CuratedTerm>, delta: &ClaudeDeltaOutput) -> MergeLog {
+    let mut log = MergeLog::default();
+
+    // 1. Remove
+    let remove_set: HashSet<String> = delta
+        .removals
+        .iter()
+        .map(|r| r.term.to_lowercase())
+        .collect();
+    let before = terms.len();
+    terms.retain(|t| !remove_set.contains(&t.term.to_lowercase()));
+    log.removed = before - terms.len();
+
+    for r in &delta.removals {
+        tracing::info!(term = %r.term, reason = %r.reason, "removed term");
+    }
+
+    // 2. Modify (sparse)
+    for m in &delta.modifications {
+        let Some(existing) = terms
+            .iter_mut()
+            .find(|t| t.term.eq_ignore_ascii_case(&m.term))
+        else {
+            tracing::warn!(term = %m.term, "modification target not found — skipping");
+            continue;
+        };
+        if let Some(ref def) = m.definition {
+            existing.definition = def.clone();
+        }
+        if m.parent.is_some() {
+            existing.parent = m.parent.clone();
+        }
+        if let Some(ref aliases) = m.aliases {
+            existing.aliases = aliases.clone();
+        }
+        if let Some(ref see_also) = m.see_also {
+            existing.see_also = see_also.clone();
+        }
+        log.modified += 1;
+        tracing::info!(term = %m.term, reason = %m.reason, "modified term");
+    }
+
+    // 3. Add
+    for a in &delta.additions {
+        terms.push(CuratedTerm {
+            term: a.term.clone(),
+            definition: a.definition.clone(),
+            parent: a.parent.clone(),
+            aliases: a.aliases.clone(),
+            see_also: a.see_also.clone(),
+            children: Vec::new(),
+            locations: Vec::new(), // filled by re-map step
+        });
+        log.added += 1;
+    }
+
+    // 4. Suggested
+    for s in &delta.suggested {
+        terms.push(CuratedTerm {
+            term: s.term.clone(),
+            definition: s.definition.clone(),
+            parent: s.parent.clone(),
+            aliases: Vec::new(),
+            see_also: Vec::new(),
+            children: Vec::new(),
+            locations: Vec::new(),
+        });
+        log.suggested += 1;
+    }
+
+    log
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::curate::terms::{CuratedTerm, TermLocation};
+    use crate::curate::terms::{
+        ClaudeSuggested, ClaudeTerm, DeltaModification, DeltaRemoval, TermLocation,
+    };
     use crate::extract::candidates::CandidateLocation;
 
     fn curated(name: &str, aliases: &[&str], has_locations: bool) -> CuratedTerm {
@@ -308,5 +401,157 @@ mod tests {
         let existing = terms_file(vec![]);
         let compact = format_compact_index(&existing);
         assert!(compact.is_empty());
+    }
+
+    fn delta(
+        additions: Vec<ClaudeTerm>,
+        modifications: Vec<DeltaModification>,
+        removals: Vec<DeltaRemoval>,
+        suggested: Vec<ClaudeSuggested>,
+    ) -> ClaudeDeltaOutput {
+        ClaudeDeltaOutput {
+            additions,
+            modifications,
+            removals,
+            suggested,
+        }
+    }
+
+    fn addition(term: &str) -> ClaudeTerm {
+        ClaudeTerm {
+            term: term.to_string(),
+            definition: format!("{term} definition."),
+            parent: None,
+            aliases: Vec::new(),
+            see_also: Vec::new(),
+            main_files: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn merge_removals() {
+        let mut terms = vec![
+            curated("OAuth", &[], true),
+            curated("deprecated", &[], true),
+            curated("TLS", &[], true),
+        ];
+        let d = delta(
+            vec![],
+            vec![],
+            vec![DeltaRemoval {
+                term: "deprecated".to_string(),
+                reason: "gone".to_string(),
+            }],
+            vec![],
+        );
+        let log = merge_delta(&mut terms, &d);
+        assert_eq!(terms.len(), 2);
+        assert!(terms.iter().all(|t| t.term != "deprecated"));
+        assert_eq!(log.removed, 1);
+    }
+
+    #[test]
+    fn merge_modifications_sparse() {
+        let mut terms = vec![CuratedTerm {
+            term: "OAuth".to_string(),
+            definition: "Old definition.".to_string(),
+            parent: None,
+            aliases: vec!["OAuth 2.0".to_string()],
+            see_also: Vec::new(),
+            children: Vec::new(),
+            locations: vec![TermLocation {
+                file: "auth.typ".to_string(),
+                main: true,
+                context: String::new(),
+            }],
+        }];
+        let d = delta(
+            vec![],
+            vec![DeltaModification {
+                term: "OAuth".to_string(),
+                definition: Some("New definition.".to_string()),
+                parent: None,
+                aliases: None,
+                see_also: None,
+                reason: "updated".to_string(),
+            }],
+            vec![],
+            vec![],
+        );
+        let log = merge_delta(&mut terms, &d);
+        assert_eq!(terms[0].definition, "New definition.");
+        assert_eq!(terms[0].aliases, vec!["OAuth 2.0"]);
+        assert_eq!(log.modified, 1);
+    }
+
+    #[test]
+    fn merge_modifications_reparent() {
+        let mut terms = vec![curated("OAuth", &[], true)];
+        let d = delta(
+            vec![],
+            vec![DeltaModification {
+                term: "OAuth".to_string(),
+                definition: None,
+                parent: Some("security".to_string()),
+                aliases: None,
+                see_also: None,
+                reason: "reparent".to_string(),
+            }],
+            vec![],
+            vec![],
+        );
+        merge_delta(&mut terms, &d);
+        assert_eq!(terms[0].parent.as_deref(), Some("security"));
+    }
+
+    #[test]
+    fn merge_additions() {
+        let mut terms = vec![curated("OAuth", &[], true)];
+        let d = delta(vec![addition("PKCE")], vec![], vec![], vec![]);
+        let log = merge_delta(&mut terms, &d);
+        assert_eq!(terms.len(), 2);
+        assert!(terms.iter().any(|t| t.term == "PKCE"));
+        assert_eq!(log.added, 1);
+    }
+
+    #[test]
+    fn merge_suggested() {
+        let mut terms = vec![curated("OAuth", &[], true)];
+        let d = delta(
+            vec![],
+            vec![],
+            vec![],
+            vec![ClaudeSuggested {
+                term: "bearer token".to_string(),
+                definition: "A token type.".to_string(),
+                parent: Some("OAuth".to_string()),
+            }],
+        );
+        let log = merge_delta(&mut terms, &d);
+        let bt = terms.iter().find(|t| t.term == "bearer token").unwrap();
+        assert!(bt.locations.is_empty());
+        assert_eq!(bt.parent.as_deref(), Some("OAuth"));
+        assert_eq!(log.suggested, 1);
+    }
+
+    #[test]
+    fn merge_modification_dangling_target_skipped() {
+        let mut terms = vec![curated("OAuth", &[], true)];
+        let d = delta(
+            vec![],
+            vec![DeltaModification {
+                term: "nonexistent".to_string(),
+                definition: Some("X".to_string()),
+                parent: None,
+                aliases: None,
+                see_also: None,
+                reason: "ghost".to_string(),
+            }],
+            vec![],
+            vec![],
+        );
+        let log = merge_delta(&mut terms, &d);
+        assert_eq!(log.modified, 0);
+        assert_eq!(terms.len(), 1);
     }
 }
