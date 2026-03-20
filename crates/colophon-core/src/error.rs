@@ -47,3 +47,45 @@ pub enum ExtractError {
 
 /// Result type alias using [`ExtractError`].
 pub type ExtractResult<T> = Result<T, ExtractError>;
+
+/// Errors that can occur during curation.
+#[derive(Error, Debug)]
+pub enum CurateError {
+    /// The `claude` CLI was not found in PATH.
+    #[error("claude CLI not found in PATH — install from https://claude.com/claude-code")]
+    ClaudeNotFound,
+
+    /// The `claude` CLI exited with an error.
+    #[error("claude CLI failed (exit {exit_code:?}): {stderr}")]
+    ClaudeFailed {
+        /// Process exit code (None if killed by signal).
+        exit_code: Option<i32>,
+        /// Captured stderr output.
+        stderr: String,
+    },
+
+    /// Failed to parse the Claude CLI JSON response.
+    #[error("failed to parse claude response: {detail}")]
+    ParseResponse {
+        /// What went wrong.
+        detail: String,
+    },
+
+    /// Candidates file is missing or empty.
+    #[error("no candidates to curate: {0}")]
+    NoCandidates(
+        /// Path to the candidates file.
+        String,
+    ),
+
+    /// Failed to read or write files.
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+
+    /// Failed to serialize output.
+    #[error("failed to serialize curated terms: {0}")]
+    Serialize(#[from] serde_yaml::Error),
+}
+
+/// Result type alias using [`CurateError`].
+pub type CurateResult<T> = Result<T, CurateError>;

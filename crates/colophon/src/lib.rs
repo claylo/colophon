@@ -93,6 +93,8 @@ pub struct Cli {
 /// Available subcommands for the CLI.
 #[derive(Subcommand)]
 pub enum Commands {
+    /// Curate extracted candidates into an index using Claude
+    Curate(commands::curate::CurateArgs),
     /// Diagnose configuration and environment
     Doctor(commands::doctor::DoctorArgs),
     /// Extract keyword candidates from documents

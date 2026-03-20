@@ -31,7 +31,7 @@ just upgrade        # update deps in Cargo.toml and Cargo.lock
 
 ## Rust Conventions
 
-- **Edition 2024**, MSRV **1.88.0**, toolchain pinned in `rust-toolchain.toml`
+- **Edition 2024**, MSRV **1.89.0**, toolchain pinned in `rust-toolchain.toml`
 - `unsafe_code = "deny"` — no unsafe unless explicitly allowed with a `// SAFETY:` comment
 - Clippy `all` = warn, `nursery` = warn — treat warnings as errors in CI
 - Use `anyhow::Result` in the binary, `thiserror` for library error types

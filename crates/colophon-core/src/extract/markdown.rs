@@ -63,14 +63,19 @@ fn strip_frontmatter(content: &str) -> &str {
 }
 
 /// Extract prose text from markdown, stripping code blocks, inline code,
-/// and frontmatter while preserving headings, paragraphs, list items,
+/// headings, and frontmatter while preserving paragraphs, list items,
 /// and image alt text.
+///
+/// Headings are intentionally excluded — they tend to be short, generic
+/// phrases ("Introduction", "Setup") that add noise to keyword extraction.
+/// Any indexable term worth capturing will appear in the body prose.
 pub fn extract_prose(markdown: &str) -> String {
     let content = strip_frontmatter(markdown);
     let parser = Parser::new_ext(content, Options::empty());
 
     let mut prose = String::with_capacity(content.len() / 2);
     let mut in_code_block = false;
+    let mut in_heading = false;
 
     for event in parser {
         match event {
@@ -80,7 +85,13 @@ pub fn extract_prose(markdown: &str) -> String {
             Event::End(TagEnd::CodeBlock) => {
                 in_code_block = false;
             }
-            Event::Text(text) if !in_code_block => {
+            Event::Start(Tag::Heading { .. }) => {
+                in_heading = true;
+            }
+            Event::End(TagEnd::Heading(_)) => {
+                in_heading = false;
+            }
+            Event::Text(text) if !in_code_block && !in_heading => {
                 if !prose.is_empty() && !prose.ends_with('\n') && !prose.ends_with(' ') {
                     prose.push(' ');
                 }
@@ -92,7 +103,7 @@ pub fn extract_prose(markdown: &str) -> String {
             Event::SoftBreak | Event::HardBreak => {
                 prose.push('\n');
             }
-            Event::End(TagEnd::Paragraph | TagEnd::Heading(_) | TagEnd::Item) => {
+            Event::End(TagEnd::Paragraph | TagEnd::Item) => {
                 prose.push('\n');
             }
             _ => {}
@@ -198,7 +209,7 @@ mod tests {
     fn no_frontmatter_handling() {
         let md = "# Just a heading\n\nSome paragraph text.";
         let result = extract_prose(md);
-        assert!(result.contains("Just a heading"));
+        assert!(!result.contains("Just a heading"));
         assert!(result.contains("Some paragraph text."));
     }
 
@@ -265,11 +276,11 @@ mod tests {
     }
 
     #[test]
-    fn heading_produces_text() {
+    fn headings_excluded_from_prose() {
         let md = "# Main Title\n\n## Subtitle\n\nBody text.";
         let result = extract_prose(md);
-        assert!(result.contains("Main Title"));
-        assert!(result.contains("Subtitle"));
+        assert!(!result.contains("Main Title"));
+        assert!(!result.contains("Subtitle"));
         assert!(result.contains("Body text."));
     }
 

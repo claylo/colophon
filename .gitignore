@@ -63,3 +63,6 @@ scratch/
 
 .colophon.yaml
 colophon-candidates.yaml
+test-output.jsonl
+out/
+scripts/claude-request

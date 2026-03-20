@@ -8,6 +8,7 @@
 //! - [`config`] - Configuration loading and management
 //! - [`error`] - Error types and result aliases
 //! - [`extract`] - Extraction pipeline for keyword candidates
+//! - [`curate`] - Claude-powered term curation pipeline
 //!
 //! # Quick Start
 //!
@@ -25,10 +26,12 @@
 
 pub mod config;
 
+pub mod curate;
+
 pub mod error;
 
 pub mod extract;
 
 pub use config::{Config, ConfigLoader, LogLevel};
 
-pub use error::{ConfigError, ConfigResult, ExtractError, ExtractResult};
+pub use error::{ConfigError, ConfigResult, CurateError, CurateResult, ExtractError, ExtractResult};
