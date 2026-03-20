@@ -46,7 +46,7 @@ msrv: 1.88.0
 owner: claylo
 pinned_dev_toolchain: 1.94.0
 preset: standard
-project_description: A modern, production-ready Rust CLI application.
+project_description: Generate back-of-book indexes and glossaries from Markdown or Typst.
 project_name: colophon
 site_deploy: github_pages
 site_package_manager: npm
