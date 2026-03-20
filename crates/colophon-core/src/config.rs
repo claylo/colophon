@@ -211,7 +211,7 @@ impl Default for CurateConfig {
             candidates: "colophon-candidates.yaml".to_string(),
             system_prompt: None,
             prompt: None,
-            full_candidates: false,
+            full_candidates: true,
             effort: "high".to_string(),
             max_output_tokens: 64_000,
             max_budget_usd: None,
