@@ -3,6 +3,7 @@
 pub mod candidates;
 pub mod keywords;
 pub mod markdown;
+pub mod typst;
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -15,7 +16,7 @@ use crate::error::{ExtractError, ExtractResult};
 
 use self::candidates::{Candidate, CandidateLocation, CandidatesFile};
 use self::keywords::{extract_tfidf, extract_yake, get_stop_words, trim_stopwords};
-use self::markdown::{extract_context, extract_prose};
+use self::markdown::extract_context;
 
 /// A parsed document ready for keyword extraction.
 struct Document {
@@ -52,16 +53,16 @@ pub fn run_with_progress(
         "collected source files"
     );
 
-    // 2. Parse markdown into prose, skip empties.
+    // 2. Parse into prose (dispatch by file extension), skip empties.
     let documents: Vec<Document> = raw_docs
         .into_iter()
-        .filter_map(|(path, content)| {
-            let prose = extract_prose(&content);
+        .filter_map(|(path, ext, content)| {
+            let prose = extract_prose_for(&content, &ext);
             if prose.is_empty() {
-                tracing::debug!(file = %path, "skipped file — no prose after markdown parse");
+                tracing::debug!(file = %path, ext, "skipped file — no prose after parse");
                 None
             } else {
-                tracing::debug!(file = %path, prose_len = prose.len(), "parsed prose");
+                tracing::debug!(file = %path, ext, prose_len = prose.len(), "parsed prose");
                 Some(Document {
                     relative_path: path,
                     prose,
@@ -407,14 +408,14 @@ pub fn run_with_progress(
 
 /// Walk `dir`, filter by extension and exclude list, read contents.
 ///
-/// Returns `(relative_path, content)` pairs sorted by path.
+/// Returns `(relative_path, extension, content)` tuples sorted by path.
 fn collect_documents(
     dir: &str,
     extensions: &[String],
     exclude: &[String],
-) -> ExtractResult<Vec<(String, String)>> {
+) -> ExtractResult<Vec<(String, String, String)>> {
     let base = Path::new(dir);
-    let mut docs: Vec<(String, String)> = Vec::new();
+    let mut docs: Vec<(String, String, String)> = Vec::new();
 
     for entry in WalkDir::new(dir).sort_by_file_name().into_iter() {
         let entry = entry.map_err(ExtractError::WalkDir)?;
@@ -425,13 +426,10 @@ fn collect_documents(
         let path = entry.path();
 
         // Check extension.
-        let ext_match = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .is_some_and(|ext| extensions.iter().any(|allowed| allowed == ext));
-        if !ext_match {
-            continue;
-        }
+        let ext = match path.extension().and_then(|e| e.to_str()) {
+            Some(ext) if extensions.iter().any(|allowed| allowed == ext) => ext.to_string(),
+            _ => continue,
+        };
 
         // Check exclude list (file name only).
         let file_name = path
@@ -454,10 +452,18 @@ fn collect_documents(
             source,
         })?;
 
-        docs.push((rel, content));
+        docs.push((rel, ext, content));
     }
 
     Ok(docs)
+}
+
+/// Extract prose from content based on file extension.
+fn extract_prose_for(content: &str, ext: &str) -> String {
+    match ext {
+        "typ" => typst::extract_prose(content),
+        _ => markdown::extract_prose(content),
+    }
 }
 
 /// Format a [`SystemTime`] as an RFC 3339-ish UTC timestamp without pulling in
@@ -1207,5 +1213,105 @@ mod tests {
             !has_oauth,
             "consolidated term exceeding max_doc_pct should be dropped"
         );
+    }
+
+    // ── Typst extraction ─────────────────────────────────────────
+
+    #[test]
+    fn pipeline_extracts_from_typst() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(
+            tmp.path().join("auth.typ"),
+            "= Authentication\n\n\
+             OAuth provides delegated authorization. OAuth 2.0 is the \
+             current standard for token-based access control.\n\n\
+             == Passwords\n\nPassword hashing uses *bcrypt* or _argon2_.\n",
+        )
+        .unwrap();
+        fs::write(
+            tmp.path().join("api.typ"),
+            "= API Design\n\n\
+             RESTful APIs use HTTP methods for CRUD operations. \
+             Rate limiting protects against abuse.\n",
+        )
+        .unwrap();
+
+        let source = SourceConfig {
+            dir: tmp.path().to_string_lossy().to_string(),
+            extensions: vec!["typ".to_string()],
+            exclude: Vec::new(),
+        };
+        let result = run(&source, &ExtractConfig::default());
+        assert!(result.is_ok(), "typst pipeline should succeed: {result:?}");
+
+        let file = result.unwrap();
+        assert_eq!(file.document_count, 2);
+        assert!(!file.candidates.is_empty());
+    }
+
+    #[test]
+    fn pipeline_mixed_md_and_typst() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(
+            tmp.path().join("intro.md"),
+            "# Introduction\n\nOAuth provides delegated authorization.\n",
+        )
+        .unwrap();
+        fs::write(
+            tmp.path().join("details.typ"),
+            "= Details\n\nTransport Layer Security encrypts data in transit.\n",
+        )
+        .unwrap();
+
+        let source = SourceConfig {
+            dir: tmp.path().to_string_lossy().to_string(),
+            extensions: vec!["md".to_string(), "typ".to_string()],
+            exclude: Vec::new(),
+        };
+        let result = run(&source, &ExtractConfig::default());
+        assert!(result.is_ok(), "mixed pipeline should succeed: {result:?}");
+
+        let file = result.unwrap();
+        assert_eq!(file.document_count, 2);
+        assert!(!file.candidates.is_empty());
+    }
+
+    #[test]
+    fn pipeline_typst_skips_code_and_math() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(
+            tmp.path().join("ch1.typ"),
+            "= Chapter 1\n\n\
+             OAuth provides delegated authorization.\n\n\
+             The formula $x^2 + y^2 = z^2$ is Pythagoras.\n\n\
+             ```rust\nfn main() {}\n```\n\n\
+             TLS encrypts data in transit.\n",
+        )
+        .unwrap();
+        fs::write(
+            tmp.path().join("ch2.typ"),
+            "= Chapter 2\n\n\
+             Rate limiting protects against abuse.\n",
+        )
+        .unwrap();
+
+        let source = SourceConfig {
+            dir: tmp.path().to_string_lossy().to_string(),
+            extensions: vec!["typ".to_string()],
+            exclude: Vec::new(),
+        };
+        let file = run(&source, &ExtractConfig::default()).unwrap();
+
+        // Code and math should not appear in candidates.
+        for c in &file.candidates {
+            assert!(
+                !c.term.contains("fn main"),
+                "code should not appear in candidates"
+            );
+            assert!(
+                !c.term.contains("x^2"),
+                "math should not appear in candidates"
+            );
+        }
     }
 }
