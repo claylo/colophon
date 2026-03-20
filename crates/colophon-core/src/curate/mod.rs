@@ -2,6 +2,7 @@
 
 mod claude;
 pub mod cost;
+pub mod incremental;
 pub mod terms;
 
 use std::collections::HashMap;
@@ -100,6 +101,213 @@ pub fn run(
         thinking_tokens: invoke_result.thinking_tokens,
         usage: invoke_result.usage,
     })
+}
+
+/// Result of the incremental curation pipeline.
+pub struct IncrementalOutput {
+    /// The updated curated terms file.
+    pub terms_file: CuratedTermsFile,
+    /// What the merge changed.
+    pub merge_log: incremental::MergeLog,
+    /// Ratio of new candidates to total (0.0–1.0).
+    pub diff_ratio: f64,
+    /// Accumulated thinking output from Claude.
+    pub thinking: String,
+    /// Editorial summary text.
+    pub editorial: String,
+    /// Number of API turns used.
+    pub turns: usize,
+    /// Number of thinking token deltas received.
+    pub thinking_tokens: usize,
+    /// Actual token usage.
+    pub usage: TokenUsage,
+}
+
+/// Estimate cost for incremental curate.
+pub fn estimate_cost_incremental(
+    new_candidates_yaml: &str,
+    compact_index: &str,
+    stale_terms: &[String],
+    config: &CurateConfig,
+) -> CostEstimate {
+    let system_prompt = claude::system_prompt_for_incremental(config, compact_index);
+    let stdin_payload =
+        claude::stdin_payload_for_incremental(config, new_candidates_yaml, stale_terms);
+    let schema_json = claude::delta_schema_json();
+
+    cost::estimate(
+        &system_prompt,
+        &stdin_payload,
+        schema_json,
+        config.max_output_tokens,
+        &config.model,
+    )
+}
+
+/// Run the incremental curation pipeline.
+pub fn run_incremental(
+    existing: &CuratedTermsFile,
+    candidates: &CandidatesFile,
+    _candidates_yaml: &str,
+    config: &CurateConfig,
+    extra_args: &[String],
+    progress: &ProgressBar,
+) -> CurateResult<IncrementalOutput> {
+    use incremental::{diff_candidates, format_compact_index, merge_delta};
+
+    let diff = diff_candidates(existing, candidates);
+
+    tracing::info!(
+        new = diff.new_candidates.len(),
+        stale = diff.stale_terms.len(),
+        total = diff.total_candidates,
+        ratio = format!("{:.1}%", diff.new_ratio() * 100.0),
+        "incremental diff complete"
+    );
+
+    let ratio = diff.new_ratio();
+    if ratio >= 0.7 {
+        tracing::warn!(
+            "{}% new candidates — strongly recommend --full-rebuild for better cross-term relationships",
+            (ratio * 100.0) as u32
+        );
+    } else if ratio >= 0.4 {
+        tracing::warn!(
+            "{}% new candidates — consider --full-rebuild for better results",
+            (ratio * 100.0) as u32
+        );
+    }
+
+    let mut terms = existing.terms.clone();
+
+    let (merge_log, invoke_result) = if diff.new_candidates.is_empty() {
+        progress.set_message("No new terms — refreshing locations only");
+        (incremental::MergeLog::default(), None)
+    } else {
+        let compact_index = format_compact_index(existing);
+
+        let new_candidates_file = CandidatesFile {
+            version: candidates.version,
+            generated: candidates.generated.clone(),
+            source_dir: candidates.source_dir.clone(),
+            document_count: candidates.document_count,
+            candidates: diff.new_candidates,
+        };
+        let new_yaml = serde_yaml::to_string(&new_candidates_file)?;
+
+        let result = claude::invoke_incremental(
+            config,
+            &new_yaml,
+            &compact_index,
+            &diff.stale_terms,
+            extra_args,
+            progress,
+        )?;
+
+        let log = merge_delta(&mut terms, &result.output);
+        (log, Some(result))
+    };
+
+    remap_locations(&mut terms, candidates);
+    rebuild_children(&mut terms);
+    validate_parents(&mut terms);
+
+    terms.sort_by(|a, b| a.term.to_lowercase().cmp(&b.term.to_lowercase()));
+    terms.truncate(config.max_terms);
+
+    let (thinking, editorial, turns, thinking_tokens, usage) = invoke_result
+        .map(|r| (r.thinking, r.editorial, r.turns, r.thinking_tokens, r.usage))
+        .unwrap_or_default();
+
+    Ok(IncrementalOutput {
+        terms_file: CuratedTermsFile {
+            version: existing.version,
+            generated: crate::extract::format_timestamp(std::time::SystemTime::now()),
+            source_dir: candidates.source_dir.clone(),
+            document_count: candidates.document_count,
+            terms,
+        },
+        merge_log,
+        diff_ratio: ratio,
+        thinking,
+        editorial,
+        turns,
+        thinking_tokens,
+        usage,
+    })
+}
+
+/// Re-map locations for all terms using fresh candidate data.
+fn remap_locations(terms: &mut [CuratedTerm], candidates: &CandidatesFile) {
+    let candidate_map: HashMap<String, &crate::extract::candidates::Candidate> = candidates
+        .candidates
+        .iter()
+        .map(|c| (c.term.to_lowercase(), c))
+        .collect();
+
+    for term in terms.iter_mut() {
+        let lookup_keys: Vec<String> = std::iter::once(term.term.to_lowercase())
+            .chain(term.aliases.iter().map(|a| a.to_lowercase()))
+            .collect();
+
+        let mut locations = Vec::new();
+        let mut seen_files = std::collections::HashSet::new();
+
+        for key in &lookup_keys {
+            if let Some(candidate) = candidate_map.get(key) {
+                for loc in &candidate.locations {
+                    if seen_files.insert(loc.file.clone()) {
+                        let was_main = term
+                            .locations
+                            .iter()
+                            .any(|existing| existing.file == loc.file && existing.main);
+                        locations.push(TermLocation {
+                            file: loc.file.clone(),
+                            main: was_main,
+                            context: loc.context.clone(),
+                        });
+                    }
+                }
+            }
+        }
+
+        term.locations = locations;
+    }
+}
+
+/// Rebuild children arrays from parent pointers.
+fn rebuild_children(terms: &mut [CuratedTerm]) {
+    let parent_map: HashMap<String, Vec<String>> = {
+        let mut map: HashMap<String, Vec<String>> = HashMap::new();
+        for t in terms.iter() {
+            if let Some(ref parent) = t.parent {
+                map.entry(parent.clone()).or_default().push(t.term.clone());
+            }
+        }
+        map
+    };
+    for term in terms.iter_mut() {
+        term.children = parent_map.get(&term.term).cloned().unwrap_or_default();
+        term.children.sort_unstable();
+    }
+}
+
+/// Warn on dangling parent refs; nullify if parent was removed.
+fn validate_parents(terms: &mut [CuratedTerm]) {
+    let term_set: std::collections::HashSet<String> =
+        terms.iter().map(|t| t.term.clone()).collect();
+    for t in terms.iter_mut() {
+        if let Some(ref parent) = t.parent
+            && !term_set.contains(parent)
+        {
+            tracing::warn!(
+                term = %t.term,
+                parent = %parent,
+                "dangling parent ref — nullifying"
+            );
+            t.parent = None;
+        }
+    }
 }
 
 /// Post-process Claude's output into the final curated term list.

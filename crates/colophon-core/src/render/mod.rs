@@ -115,30 +115,30 @@ pub enum RenderFormat {
     Typst,
 }
 
+/// Configuration for a render run.
+pub struct RenderConfig<'a> {
+    /// Directory containing source files to annotate.
+    pub source_dir: &'a str,
+    /// File extensions to process (e.g. `["typ"]`).
+    pub extensions: &'a [String],
+    /// Directory to write annotated output files.
+    pub output_dir: &'a str,
+    /// Whether to emit a standalone glossary document.
+    pub glossary: bool,
+    /// Only insert markers for main (substantive) locations.
+    pub main_only: bool,
+    /// Optional spacing between glossary entries (e.g. `"12pt"`).
+    pub glossary_spacing: Option<&'a str>,
+    /// Output format.
+    pub format: RenderFormat,
+}
+
 /// Run the render pipeline.
-pub fn run(
-    terms: &CuratedTermsFile,
-    source_dir: &str,
-    extensions: &[String],
-    output_dir: &str,
-    glossary: bool,
-    main_only: bool,
-    glossary_spacing: Option<&str>,
-    format: RenderFormat,
-) -> RenderResult<RenderOutput> {
-    match format {
+pub fn run(terms: &CuratedTermsFile, config: RenderConfig<'_>) -> RenderResult<RenderOutput> {
+    match config.format {
         RenderFormat::Typst => {
             let renderer = typst::TypstRenderer;
-            run_with_renderer(
-                terms,
-                source_dir,
-                extensions,
-                output_dir,
-                glossary,
-                main_only,
-                glossary_spacing,
-                &renderer,
-            )
+            run_with_renderer(terms, &config, &renderer)
         }
     }
 }
@@ -153,19 +153,14 @@ pub fn run(
 /// receive index markers — producing a much sparser, more navigable index.
 pub(crate) fn run_with_renderer(
     terms: &CuratedTermsFile,
-    source_dir: &str,
-    extensions: &[String],
-    output_dir: &str,
-    glossary: bool,
-    main_only: bool,
-    glossary_spacing: Option<&str>,
+    config: &RenderConfig<'_>,
     renderer: &dyn Renderer,
 ) -> RenderResult<RenderOutput> {
-    let source_path = Path::new(source_dir);
-    let output_path = Path::new(output_dir);
+    let source_path = Path::new(config.source_dir);
+    let output_path = Path::new(config.output_dir);
     std::fs::create_dir_all(output_path)?;
 
-    let ext_set: HashSet<&str> = extensions.iter().map(String::as_str).collect();
+    let ext_set: HashSet<&str> = config.extensions.iter().map(String::as_str).collect();
     let mut stats = RenderOutput::default();
 
     for entry in WalkDir::new(source_path)
@@ -203,26 +198,31 @@ pub(crate) fn run_with_renderer(
                 }
 
                 // In main-only mode, skip non-substantive locations.
-                if main_only && !loc.main {
+                if config.main_only && !loc.main {
                     continue;
                 }
 
                 // Try canonical term first, then aliases.
                 // For Typst: AST-aware search (skips labels, links, etc.)
                 // For other formats: simple text search.
-                let offset = if let Some(ref ranges) = prose_ranges {
-                    typst::find_term_offset_in_prose(&source, &term.term, ranges).or_else(|| {
-                        term.aliases.iter().find_map(|alias| {
-                            typst::find_term_offset_in_prose(&source, alias, ranges)
+                let offset = prose_ranges.as_ref().map_or_else(
+                    || {
+                        find_term_offset(&source, &term.term).or_else(|| {
+                            term.aliases
+                                .iter()
+                                .find_map(|alias| find_term_offset(&source, alias))
                         })
-                    })
-                } else {
-                    find_term_offset(&source, &term.term).or_else(|| {
-                        term.aliases
-                            .iter()
-                            .find_map(|alias| find_term_offset(&source, alias))
-                    })
-                };
+                    },
+                    |ranges| {
+                        typst::find_term_offset_in_prose(&source, &term.term, ranges).or_else(
+                            || {
+                                term.aliases.iter().find_map(|alias| {
+                                    typst::find_term_offset_in_prose(&source, alias, ranges)
+                                })
+                            },
+                        )
+                    },
+                );
 
                 match offset {
                     Some(byte_offset) => {
@@ -283,8 +283,8 @@ pub(crate) fn run_with_renderer(
         }
     }
 
-    if glossary {
-        let glossary_content = renderer.glossary(terms, glossary_spacing);
+    if config.glossary {
+        let glossary_content = renderer.glossary(terms, config.glossary_spacing);
         let glossary_path = output_path.join("glossary.typ");
         std::fs::write(&glossary_path, &glossary_content)?;
         stats.glossary_terms = terms.terms.len();
@@ -419,16 +419,17 @@ mod tests {
         };
 
         let renderer = super::typst::TypstRenderer;
-        let result = run_with_renderer(
-            &terms,
-            source_dir.to_str().unwrap(),
-            &["typ".to_string()],
-            output_dir.to_str().unwrap(),
-            false,
-            false,
-            None,
-            &renderer,
-        );
+        let exts = vec!["typ".to_string()];
+        let config = RenderConfig {
+            source_dir: source_dir.to_str().unwrap(),
+            extensions: &exts,
+            output_dir: output_dir.to_str().unwrap(),
+            glossary: false,
+            main_only: false,
+            glossary_spacing: None,
+            format: RenderFormat::Typst,
+        };
+        let result = run_with_renderer(&terms, &config, &renderer);
         assert!(result.is_ok(), "run should succeed: {result:?}");
         let output = result.unwrap();
         assert_eq!(output.files_annotated, 1);
@@ -474,17 +475,17 @@ mod tests {
         };
 
         let renderer = super::typst::TypstRenderer;
-        let result = run_with_renderer(
-            &terms,
-            source_dir.to_str().unwrap(),
-            &["typ".to_string()],
-            output_dir.to_str().unwrap(),
-            false,
-            false,
-            None,
-            &renderer,
-        )
-        .unwrap();
+        let exts = vec!["typ".to_string()];
+        let config = RenderConfig {
+            source_dir: source_dir.to_str().unwrap(),
+            extensions: &exts,
+            output_dir: output_dir.to_str().unwrap(),
+            glossary: false,
+            main_only: false,
+            glossary_spacing: None,
+            format: RenderFormat::Typst,
+        };
+        let result = run_with_renderer(&terms, &config, &renderer).unwrap();
         assert_eq!(result.markers_inserted, 1);
 
         let annotated = std::fs::read_to_string(output_dir.join("api.typ")).unwrap();
@@ -528,17 +529,17 @@ mod tests {
         };
 
         let renderer = super::typst::TypstRenderer;
-        let result = run_with_renderer(
-            &terms,
-            source_dir.to_str().unwrap(),
-            &["typ".to_string()],
-            output_dir.to_str().unwrap(),
-            false,
-            false,
-            None,
-            &renderer,
-        )
-        .unwrap();
+        let exts = vec!["typ".to_string()];
+        let config = RenderConfig {
+            source_dir: source_dir.to_str().unwrap(),
+            extensions: &exts,
+            output_dir: output_dir.to_str().unwrap(),
+            glossary: false,
+            main_only: false,
+            glossary_spacing: None,
+            format: RenderFormat::Typst,
+        };
+        let result = run_with_renderer(&terms, &config, &renderer).unwrap();
         assert_eq!(result.markers_inserted, 1);
 
         let annotated = std::fs::read_to_string(output_dir.join("auth.typ")).unwrap();
@@ -575,17 +576,17 @@ mod tests {
         };
 
         let renderer = super::typst::TypstRenderer;
-        let result = run_with_renderer(
-            &terms,
-            source_dir.to_str().unwrap(),
-            &["typ".to_string()],
-            output_dir.to_str().unwrap(),
-            false,
-            false,
-            None,
-            &renderer,
-        )
-        .unwrap();
+        let exts = vec!["typ".to_string()];
+        let config = RenderConfig {
+            source_dir: source_dir.to_str().unwrap(),
+            extensions: &exts,
+            output_dir: output_dir.to_str().unwrap(),
+            glossary: false,
+            main_only: false,
+            glossary_spacing: None,
+            format: RenderFormat::Typst,
+        };
+        let result = run_with_renderer(&terms, &config, &renderer).unwrap();
         assert_eq!(result.markers_inserted, 0);
         assert_eq!(result.terms_not_found, 1);
     }
@@ -620,17 +621,17 @@ mod tests {
         };
 
         let renderer = super::typst::TypstRenderer;
-        let result = run_with_renderer(
-            &terms,
-            source_dir.to_str().unwrap(),
-            &["typ".to_string()],
-            output_dir.to_str().unwrap(),
-            true,
-            false,
-            None,
-            &renderer,
-        )
-        .unwrap();
+        let exts = vec!["typ".to_string()];
+        let config = RenderConfig {
+            source_dir: source_dir.to_str().unwrap(),
+            extensions: &exts,
+            output_dir: output_dir.to_str().unwrap(),
+            glossary: true,
+            main_only: false,
+            glossary_spacing: None,
+            format: RenderFormat::Typst,
+        };
+        let result = run_with_renderer(&terms, &config, &renderer).unwrap();
         assert_eq!(result.glossary_terms, 1);
 
         let glossary_path = output_dir.join("glossary.typ");

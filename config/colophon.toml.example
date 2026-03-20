@@ -155,7 +155,8 @@ candidates = "colophon-candidates.yaml"
 # Send full YAML with context snippets instead of compact format.
 # Full mode uses more tokens (~175K vs ~7K) but produces better
 # definitions and more suggested terms.
-# Default: false (use --full flag to override at runtime)
+# Default: true
+# Set to false for cheaper runs at the expense of output quality.
 # full_candidates = true
 
 # Effort level for the Claude CLI.

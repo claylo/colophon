@@ -155,7 +155,7 @@ gh secret set HOMEBREW_COMMITTER_TOKEN
 
 ```ruby
 class Colophon < Formula
-  desc "A modern, production-ready Rust CLI application."
+  desc "Generate back-of-book indexes and glossaries from Markdown or Typst."
   homepage "https://github.com/claylo/colophon"
   version "0.1.0"
   license "['Apache-2.0', 'MIT']"
@@ -208,7 +208,7 @@ maintainer = "Clay Loveless <your-email@example.com>"
 copyright = "Clay Loveless"
 license-file = ["LICENSE-MIT", "4"]
 extended-description = """\
-A modern, production-ready Rust CLI application."""
+Generate back-of-book indexes and glossaries from Markdown or Typst."""
 section = "utility"
 priority = "optional"
 assets = [
@@ -289,7 +289,7 @@ npm/
 {
   "name": "@claylo/colophon-linux-x64",
   "version": "0.1.0",
-  "description": "A modern, production-ready Rust CLI application. (linux-x64 binary)",
+  "description": "Generate back-of-book indexes and glossaries from Markdown or Typst. (linux-x64 binary)",
   "license": "['Apache-2.0', 'MIT']",
   "repository": {
     "type": "git",
@@ -310,7 +310,7 @@ Valid `cpu` values: `"x64"`, `"arm64"`
 {
   "name": "@claylo/colophon",
   "version": "0.1.0",
-  "description": "A modern, production-ready Rust CLI application.",
+  "description": "Generate back-of-book indexes and glossaries from Markdown or Typst.",
   "license": "['Apache-2.0', 'MIT']",
   "repository": {
     "type": "git",

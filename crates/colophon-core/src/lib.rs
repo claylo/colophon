@@ -38,6 +38,6 @@ pub mod render;
 pub use config::{Config, ConfigLoader, LogLevel};
 
 pub use error::{
-    ConfigError, ConfigResult, CurateError, CurateResult, ExtractError, ExtractResult,
-    RenderError, RenderResult,
+    ConfigError, ConfigResult, CurateError, CurateResult, ExtractError, ExtractResult, RenderError,
+    RenderResult,
 };

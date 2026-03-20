@@ -13,7 +13,7 @@ readme = "README.md"
 repository = "https://github.com/claylo/colophon"
 homepage = "https://github.com/claylo/colophon"
 documentation = "https://docs.rs/colophon"
-description = "Generate book indexes and glossaries from Markdown. Because your book deserves a rear end worth looking at."
+description = "Generate book indexes and glossaries from Markdown or Typst. Because your book deserves a rear end worth looking at."
 keywords = ["index", "glossary", "typst", "markdown", "publishing"]
 categories = ["command-line-utilities", "text-processing"]
 

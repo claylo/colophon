@@ -7,7 +7,7 @@ use anyhow::Context;
 use clap::Args;
 use colophon_core::config::Config;
 use colophon_core::curate::terms::CuratedTermsFile;
-use colophon_core::render::{self, RenderFormat};
+use colophon_core::render::{self, RenderConfig, RenderFormat};
 use tabled::{builder::Builder, settings::Style};
 use tracing::{debug, instrument};
 
@@ -89,17 +89,16 @@ pub fn cmd_render(args: RenderArgs, json: bool, config: &Config) -> anyhow::Resu
     }
 
     let start = Instant::now();
-    let result = render::run(
-        &terms,
-        &source_dir,
-        &config.source.extensions,
-        &args.output_dir,
-        args.glossary,
-        args.main_only,
-        args.glossary_spacing.as_deref(),
+    let render_config = RenderConfig {
+        source_dir: &source_dir,
+        extensions: &config.source.extensions,
+        output_dir: &args.output_dir,
+        glossary: args.glossary,
+        main_only: args.main_only,
+        glossary_spacing: args.glossary_spacing.as_deref(),
         format,
-    )
-    .context("render pipeline failed")?;
+    };
+    let result = render::run(&terms, render_config).context("render pipeline failed")?;
     let elapsed = start.elapsed();
 
     if json {

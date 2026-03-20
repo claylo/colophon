@@ -47,6 +47,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+serde_yaml = "0.9"
 owo-colors = { version = "4.3", features = ["supports-colors"] }
 camino = { version = "1.2", features = ["serde1"] }
 directories = "6.0"

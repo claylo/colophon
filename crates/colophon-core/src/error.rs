@@ -85,6 +85,10 @@ pub enum CurateError {
     /// Failed to serialize output.
     #[error("failed to serialize curated terms: {0}")]
     Serialize(#[from] serde_yaml::Error),
+
+    /// Incremental mode requires an existing terms file but none was found.
+    #[error("no existing terms file found at {0} — run full curate first")]
+    NoExistingTerms(String),
 }
 
 /// Result type alias using [`CurateError`].

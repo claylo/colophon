@@ -111,6 +111,49 @@ pub(crate) struct ClaudeSuggested {
     pub parent: Option<String>,
 }
 
+/// Delta response from Claude in incremental mode.
+///
+/// Matches the JSON Schema in `config/curate-delta-schema.yaml`.
+/// Contains only changes — existing unchanged terms are not included.
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct ClaudeDeltaOutput {
+    /// New terms to add.
+    pub additions: Vec<ClaudeTerm>,
+    /// Modifications to existing terms (sparse updates).
+    pub modifications: Vec<DeltaModification>,
+    /// Terms to remove.
+    pub removals: Vec<DeltaRemoval>,
+    /// Terms Claude spotted that extraction missed.
+    #[serde(default)]
+    pub suggested: Vec<ClaudeSuggested>,
+}
+
+/// A modification to an existing term. Only changed fields are present.
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct DeltaModification {
+    /// Exact name of the existing term being modified.
+    pub term: String,
+    /// Updated definition (only if changed).
+    pub definition: Option<String>,
+    /// New parent (only if reparented).
+    pub parent: Option<String>,
+    /// Updated alias list (replaces existing if present).
+    pub aliases: Option<Vec<String>>,
+    /// Updated see_also list (replaces existing if present).
+    pub see_also: Option<Vec<String>>,
+    /// Justification for the change.
+    pub reason: String,
+}
+
+/// A term to remove from the index.
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct DeltaRemoval {
+    /// Exact name of the term to remove.
+    pub term: String,
+    /// Why it should be removed.
+    pub reason: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -254,5 +297,84 @@ mod tests {
         assert!(output.terms[0].parent.is_none());
         assert!(output.terms[0].aliases.is_empty());
         assert!(output.suggested.is_empty());
+    }
+
+    #[test]
+    fn delta_output_deserializes() {
+        let json = r#"{
+            "additions": [
+                {
+                    "term": "PKCE",
+                    "definition": "Proof Key for Code Exchange.",
+                    "parent": "OAuth",
+                    "aliases": ["Proof Key for Code Exchange"],
+                    "see_also": ["OAuth"],
+                    "main_files": ["auth.md"]
+                }
+            ],
+            "modifications": [
+                {
+                    "term": "OAuth",
+                    "definition": "Updated definition.",
+                    "reason": "PKCE changes the OAuth landscape"
+                }
+            ],
+            "removals": [
+                {
+                    "term": "deprecated_term",
+                    "reason": "No longer in corpus"
+                }
+            ],
+            "suggested": [
+                {
+                    "term": "bearer token",
+                    "definition": "A type of access token."
+                }
+            ]
+        }"#;
+        let output: ClaudeDeltaOutput = serde_json::from_str(json).unwrap();
+        assert_eq!(output.additions.len(), 1);
+        assert_eq!(output.additions[0].term, "PKCE");
+        assert_eq!(
+            output.additions[0].aliases,
+            vec!["Proof Key for Code Exchange"]
+        );
+        assert_eq!(output.modifications.len(), 1);
+        assert_eq!(output.modifications[0].term, "OAuth");
+        assert!(output.modifications[0].definition.is_some());
+        assert_eq!(output.removals.len(), 1);
+        assert_eq!(output.removals[0].term, "deprecated_term");
+        assert_eq!(output.suggested.len(), 1);
+    }
+
+    #[test]
+    fn delta_output_empty_arrays() {
+        let json = r#"{
+            "additions": [],
+            "modifications": [],
+            "removals": [],
+            "suggested": []
+        }"#;
+        let output: ClaudeDeltaOutput = serde_json::from_str(json).unwrap();
+        assert!(output.additions.is_empty());
+        assert!(output.modifications.is_empty());
+        assert!(output.removals.is_empty());
+        assert!(output.suggested.is_empty());
+    }
+
+    #[test]
+    fn delta_modification_minimal() {
+        let json = r#"{
+            "additions": [],
+            "modifications": [{"term": "OAuth", "reason": "just testing"}],
+            "removals": [],
+            "suggested": []
+        }"#;
+        let output: ClaudeDeltaOutput = serde_json::from_str(json).unwrap();
+        let m = &output.modifications[0];
+        assert!(m.definition.is_none());
+        assert!(m.parent.is_none());
+        assert!(m.aliases.is_none());
+        assert!(m.see_also.is_none());
     }
 }

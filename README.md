@@ -3,22 +3,50 @@
 [![CI](https://github.com/claylo/colophon/actions/workflows/ci.yml/badge.svg)](https://github.com/claylo/colophon/actions/workflows/ci.yml)
 [![Crates.io](https://img.shields.io/crates/v/colophon.svg)](https://crates.io/crates/colophon)
 [![docs.rs](https://docs.rs/colophon/badge.svg)](https://docs.rs/colophon)
-[![MSRV](https://img.shields.io/badge/MSRV-1.88.0-blue.svg)](https://github.com/claylo/colophon)
+[![MSRV](https://img.shields.io/badge/MSRV-1.89.0-blue.svg)](https://github.com/claylo/colophon)
 
-A modern, production-ready Rust CLI application.
+Generate back-of-book indexes and glossaries from Markdown or Typst source files. Three commands take you from raw manuscript to print-ready index:
 
+```
+colophon extract --dir ./chapters
+colophon curate
+colophon render --terms colophon-terms.yaml --glossary -o ./output
+```
 
-## Features
+**Extract** scans your documents for keyword candidates using YAKE and TF-IDF. **Curate** sends those candidates to Claude for professional indexing judgment — merging synonyms, building hierarchy, writing definitions. **Render** inserts index markers and generates a glossary in your source format.
 
+## How It Works
 
-- **Hierarchical Configuration** - Automatic config discovery from project directories up to user home
+```
+  ┌─────────┐      ┌────────┐      ┌────────┐
+  │ extract │ ──── │ curate │ ──── │ render │
+  └─────────┘      └────────┘      └────────┘
+    .md/.typ    candidates.yaml   terms.yaml    annotated files
+    ────────>   ────────────────> ──────────>   + glossary.typ
+```
 
-- **Structured Logging** - Daily-rotated JSONL log files
-- **JSON Output** - Machine-readable output for scripting and automation
-- **Shell Completions** - Tab completion for Bash, Zsh, Fish, and PowerShell
-- **Man Pages** - Unix-style documentation
+1. **Extract** walks your source directory, parses Markdown (pulldown-cmark) and Typst (typst-syntax AST), runs YAKE keyword extraction per document, then TF-IDF across the corpus. Outputs `colophon-candidates.yaml`.
+
+2. **Curate** sends candidates to Claude via the `claude` CLI. Claude acts as a professional book indexer: keeps terms worth looking up, kills noise, merges synonyms into canonical entries with aliases, builds parent/child hierarchy, writes glossary definitions, and identifies which files discuss each term substantively. Outputs `colophon-terms.yaml`.
+
+3. **Render** reads the curated terms and inserts format-specific index markers into your source files. For Typst, it generates `#index[term]` and `#index-main[term]` markers (compatible with the [in-dexter](https://typst.app/universe/package/in-dexter/) package) and a `glossary.typ` with linked cross-references.
+
+### Incremental Curate
+
+After your first full curate run, subsequent runs are incremental by default. Colophon diffs fresh candidates against your existing `colophon-terms.yaml`:
+
+- **No new terms?** Mechanical location refresh only. Zero cost, sub-second.
+- **New terms found?** Sends only the new candidates to Claude with a compact summary of the existing index. Typical cost: ~$0.50 vs ~$8 for a full rebuild.
+
+Force a full rebuild any time with `--full-rebuild`.
 
 ## Installation
+
+### From Source
+
+```bash
+cargo install colophon
+```
 
 ### Homebrew (macOS and Linux)
 
@@ -28,271 +56,182 @@ brew install claylo/brew/colophon
 
 ### Pre-built Binaries
 
-Download the latest release for your platform from the [releases page](https://github.com/claylo/colophon/releases).
+Download from the [releases page](https://github.com/claylo/colophon/releases). Binaries are available for macOS (Apple Silicon / Intel), Linux (x86_64 / ARM64), and Windows.
 
-Binaries are available for:
-- macOS (Apple Silicon and Intel)
-- Linux (x86_64 and ARM64, glibc and musl)
-- Windows (x86_64 and ARM64)
+### Requirements
 
-### From Source
+- The `curate` command requires the [Claude CLI](https://claude.com/claude-code) (`claude`) in your PATH.
+- Typst rendering uses [in-dexter](https://typst.app/universe/package/in-dexter/) markers. Add `#import "@preview/in-dexter:0.6.1": *` to your document.
 
-```bash
-cargo install colophon
+## Quick Start
+
+Create a config file in your project root:
+
+```yaml
+# .colophon.yaml
+source:
+  dir: ./chapters
+  extensions: [typ]
 ```
 
-Or build from source:
+Run the pipeline:
 
 ```bash
-git clone https://github.com/claylo/colophon.git
-cd colophon
-cargo install --path crates/colophon
+# 1. Extract keyword candidates
+colophon extract
+
+# 2. Curate with Claude (estimate cost first)
+colophon curate --dry-run
+colophon curate
+
+# 3. Render index markers and glossary
+colophon render --glossary -o ./output
 ```
 
-### Shell Completions
-
-Shell completions are included in release archives and Homebrew installs. For manual installation, see [Shell Completions](#shell-completions) below.
-
-## Usage
+After editing your manuscript, run it again. The curate step auto-detects the existing terms file and runs incrementally:
 
 ```bash
-# Show version and build information
-colophon info
-
-# JSON output for scripting
-colophon info --json
-
-# Enable verbose output
-colophon --verbose <command>
+colophon extract
+colophon curate        # incremental — only new terms sent to Claude
+colophon render --glossary -o ./output
 ```
 
+## Commands
+
+### extract
+
+Scan source files and produce keyword candidates:
+
+```bash
+colophon extract --dir ./chapters -o candidates.yaml
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-d, --dir` | config `source.dir` | Source directory to scan |
+| `-o, --output` | `colophon-candidates.yaml` | Output file |
+| `--json` | | Output as JSON instead of YAML |
+
+Extraction parameters (n-gram range, min score, max candidates, stop words, exclude terms, known terms) are configured in your config file. See `config/colophon.yaml.example` for all options.
+
+### curate
+
+Send candidates to Claude for professional indexing:
+
+```bash
+# Estimate cost without invoking Claude
+colophon curate --dry-run
+
+# Run with Opus for best quality
+colophon curate -m opus
+
+# Set a budget ceiling
+colophon curate --max-budget-usd 10
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--candidates` | `colophon-candidates.yaml` | Path to candidates file |
+| `-m, --model` | config `curate.model` | Claude model (`sonnet`, `opus`, `haiku`) |
+| `--dry-run` | | Estimate cost and exit |
+| `--max-budget-usd` | | Abort if estimated cost exceeds this |
+| `--full-rebuild` | | Force full rebuild (skip incremental) |
+| `--full` | | Send full YAML with context snippets |
+| `-o, --output-dir` | `.` | Where to write `colophon-terms.yaml` |
+
+**Incremental mode** activates automatically when `colophon-terms.yaml` exists in the output directory. It re-extracts candidates locally, diffs against existing terms, and sends only new candidates to Claude. Use `--full-rebuild` to bypass this.
+
+Pass extra flags to the `claude` CLI after `--`:
+
+```bash
+colophon curate -- --max-turns 3
+```
+
+### render
+
+Insert index markers and generate a glossary:
+
+```bash
+# Annotate source files with index markers
+colophon render --terms colophon-terms.yaml -o ./output
+
+# Also generate a glossary
+colophon render --terms colophon-terms.yaml --glossary -o ./output
+
+# Only mark substantive discussions (bold page numbers)
+colophon render --terms colophon-terms.yaml --main-only -o ./output
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--terms` | `colophon-terms.yaml` | Curated terms file |
+| `-d, --dir` | from terms file | Source directory |
+| `-o, --output-dir` | `.` | Where to write annotated files |
+| `--format` | `typst` | Output format |
+| `--glossary` | | Also emit `glossary.typ` |
+| `--main-only` | | Only mark `main: true` locations |
+| `--glossary-spacing` | | Gap between entries (e.g., `12pt`) |
+
+For Typst output, render produces:
+- `#index[term]` markers at term locations
+- `#index-main[term]` for substantive discussions
+- `#index("parent", "child")` for hierarchical entries
+- A `glossary.typ` with code-mode `#terms()` entries, label anchors, and linked cross-references
 
 ## Configuration
 
-Configuration files are discovered automatically in order of precedence (highest first):
+Config files are discovered automatically (highest precedence first):
 
 1. `.colophon.<ext>` in current directory or any parent
 2. `colophon.<ext>` in current directory or any parent
 3. `~/.config/colophon/config.<ext>` (user config)
 
-**Supported formats:** TOML, YAML, JSON (extensions: `.toml`, `.yaml`, `.yml`, `.json`)
+Supported formats: TOML, YAML, JSON. Search stops at `.git` boundaries.
 
-Values from higher-precedence files override lower ones. Missing files are silently ignored.
+See [`config/colophon.yaml.example`](config/colophon.yaml.example) for all available options with documentation.
 
-See the example configurations in the repository root for templates.
+### Minimal Config
 
-### Example Configuration
-
-**TOML** (`~/.config/colophon/config.toml`):
-```toml
-log_level = "info"
-```
-
-**YAML** (`~/.config/colophon/config.yaml`):
 ```yaml
-log_level: info
+source:
+  dir: ./chapters
+  extensions: [typ]
+
+curate:
+  model: opus
+  max_budget_usd: 10.0
 ```
 
-**JSON** (`~/.config/colophon/config.json`):
-```json
-{
-  "log_level": "info"
-}
-```
+## Global Options
 
-### Configuration Options
+Every command accepts these flags:
 
-| Option | Values | Default | Description |
-|--------|--------|---------|-------------|
-| `log_level` | `debug`, `info`, `warn`, `error` | `info` | Minimum log level to display |
-| `log_dir` | path | platform default | Directory for JSONL log files |
-
-
-## Logging
-
-Logs are written as **JSONL** to a daily-rotated file.
-Rotation is date-suffixed (e.g. `colophon.jsonl.2026-01-06`).
-
-> **Note**: Logs never write to stdout, which is reserved for application output
-> (important for tools like MCP servers that use stdout for communication).
-
-Default log path (first writable wins):
-
-1. `/var/log/colophon.jsonl` (Unix only, requires write access)
-2. OS user data directory (e.g. `~/.local/share/colophon/logs/colophon.jsonl`)
-3. Falls back to stderr if no writable directory is found
-
-Overrides:
-
-- `COLOPHON_LOG_PATH` — log file path (daily rotation appends `.YYYY-MM-DD`)
-- `COLOPHON_LOG_DIR` — directory (file name defaults to `colophon.jsonl`)
-- `COLOPHON_ENV` — environment tag (default: `dev`)
-- Config file key: `log_dir`
-
-
-## Shell Completions
-
-Shell completions are included in the release archives. To install manually:
-
-**Bash**
-```bash
-colophon completions bash > ~/.local/share/bash-completion/completions/colophon
-```
-
-**Zsh**
-```bash
-colophon completions zsh > ~/.zfunc/_colophon
-```
-
-**Fish**
-```bash
-colophon completions fish > ~/.config/fish/completions/colophon.fish
-```
-
-**PowerShell**
-```powershell
-colophon completions powershell > $PROFILE.CurrentUserAllHosts
-```
+| Flag | Description |
+|------|-------------|
+| `-v, --verbose` | More detail (repeatable: `-vv` for trace) |
+| `-q, --quiet` | Only print errors |
+| `--json` | Machine-readable JSON output |
+| `-C, --chdir` | Run as if started in a different directory |
+| `-c, --config` | Explicit config file path |
 
 ## Development
 
-This project uses a workspace layout with multiple crates:
-
 ```
 crates/
-├── colophon/       # CLI binary
-└── colophon-core/  # Core library (config, errors)
+  colophon/         # CLI binary (thin shell)
+  colophon-core/    # Shared library (extract, curate, render)
+  xtask/            # Dev automation
 ```
 
-### Prerequisites
-
-- Rust 1.88.0+ (2024 edition)
-- [just](https://github.com/casey/just) (task runner)
-- [cargo-nextest](https://nexte.st/) (test runner)
-
-### Quick Start
+Prerequisites: Rust 1.89.0+, [just](https://github.com/casey/just), [cargo-nextest](https://nexte.st/)
 
 ```bash
-# List available tasks
-just --list
-
-# Run full check suite (format, lint, test)
-just check
-
-# Run tests only
-just test
-
-# Run with coverage
-just cov
+just check          # fmt + clippy + deny + test + doc-test
+just test           # cargo nextest run
+just clippy         # lint
 ```
 
-### Build Tasks
-
-| Command | Description |
-|---------|-------------|
-| `just check` | Format, lint, and test |
-| `just fmt` | Format code with rustfmt |
-| `just clippy` | Run clippy lints |
-| `just test` | Run tests with nextest |
-| `just doc-test` | Run documentation tests |
-| `just cov` | Generate coverage report |
-
-
-### xtask Commands
-
-The project includes an xtask crate for build automation:
-
-```bash
-# Generate man pages
-cargo xtask man
-
-# Generate shell completions
-cargo xtask completions
-
-# Generate for specific shell
-cargo xtask completions --shell zsh
-```
-
-## Architecture
-
-
-### Crate Organization
-
-
-- **colophon** - The CLI binary. Handles argument parsing, command dispatch, and user interaction.
-- **colophon-core** - The core library. Contains configuration loading, error types, and shared functionality.
-
-### Error Handling
-
-- Libraries use `thiserror` for structured error types
-- Binaries use `anyhow` for flexible error propagation
-- All errors include context for debugging
-
-
-### Configuration System
-
-The `ConfigLoader` provides flexible configuration discovery:
-
-```rust
-use colophon_core::config::{Config, ConfigLoader};
-
-let config = ConfigLoader::new()
-    .with_project_search(std::env::current_dir()?)
-    .with_user_config(true)
-    .load()?;
-```
-
-Features:
-- Walks up directory tree looking for config files
-- Stops at repository boundaries (`.git` by default)
-- Merges multiple config sources with clear precedence
-- Supports explicit file paths for testing
-
-## CI/CD
-
-This project uses GitHub Actions for continuous integration:
-
-- **Build & Test** - Runs on every push and PR
-- **MSRV Check** - Verifies minimum supported Rust version
-- **Clippy** - Enforces lint rules
-- **Coverage** - Tracks test coverage
-
-### Dependabot
-
-This project uses Dependabot for security monitoring, but **not** for automatic pull requests. Instead:
-
-1. Dependabot scans for vulnerabilities in dependencies
-2. A weekly GitHub Actions workflow converts alerts into **issues**
-3. Maintainers review and address updates manually
-
-This approach provides:
-- Full control over when and how dependencies are updated
-- Opportunity to batch related updates together
-- Time to test updates before merging
-- Cleaner git history without automated PR noise
-
-Security alerts appear as issues labeled `dependabot-alert`.
-
-## Contributing
-
-Contributions welcome! Please see [AGENTS.md](AGENTS.md) for development conventions.
-
-### Commit Messages
-
-This project uses [Conventional Commits](https://www.conventionalcommits.org/):
-
-- `feat:` - New features
-- `fix:` - Bug fixes
-- `docs:` - Documentation changes
-- `perf:` - Performance improvements
-- `chore:` - Maintenance tasks
-
-### Code Style
-
-- Rust 2024 edition
-- `#![deny(unsafe_code)]` - Safe Rust only
-- Follow `rustfmt` defaults
-- Keep clippy clean
+See [AGENTS.md](AGENTS.md) for development conventions.
 
 ## License
 
@@ -302,4 +241,3 @@ Licensed under either of:
 - MIT license ([LICENSE-MIT](LICENSE-MIT))
 
 at your option.
-
