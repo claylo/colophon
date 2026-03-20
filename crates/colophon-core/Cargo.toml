@@ -45,11 +45,21 @@ stop-words = { version = "0.10", features = ["iso", "nltk"] }
 # Regex for exclude_terms pattern matching
 regex = "1"
 
-# YAML serialization for candidates output
+# JSON for Claude CLI response parsing
+serde_json = "1.0"
+
+# YAML serialization for candidates/terms output
 serde_yaml = "0.9"
 
 # Directory traversal
 walkdir = "2"
+
+# Find executables in PATH
+which = "7"
+indicatif = "0.18.4"
+typst-syntax = "0.14.0"
+tempfile = "3.26"
+ah-ah-ah = "0.1.0"
 
 [dev-dependencies]
 tempfile = "3.26"

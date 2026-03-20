@@ -3,7 +3,7 @@
 
 use anyhow::Context;
 use clap::Parser;
-use colophon::{Cli, Commands, commands};
+use colophon::{commands, Cli, Commands};
 use colophon_core::config::ConfigLoader;
 use tracing::debug;
 
@@ -67,6 +67,7 @@ fn main() -> anyhow::Result<()> {
 
     // Execute command
     let result = match command {
+        Commands::Curate(args) => commands::curate::cmd_curate(args, cli.json, &config),
         Commands::Doctor(args) => {
             commands::doctor::cmd_doctor(args, cli.json, &config_sources, &cwd)
         }

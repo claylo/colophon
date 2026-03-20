@@ -1,0 +1,169 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# --- Parse flags ---
+FULL_MODE=false
+POSITIONAL=()
+for arg in "$@"; do
+    case "$arg" in
+        --full|--no-compact) FULL_MODE=true ;;
+        *) POSITIONAL+=("$arg") ;;
+    esac
+done
+
+# --- Input files (positional args after flags) ---
+CONFIG_FILE="${POSITIONAL[0]:-$PROJECT_DIR/.colophon.yaml}"
+CANDIDATES_FILE="${POSITIONAL[1]:-$PROJECT_DIR/colophon-candidates.yaml}"
+
+# --- Output files ---
+OUTPUT_FILE="$PROJECT_DIR/colophon-curated-04.json"
+LOG_FILE="$PROJECT_DIR/curate-request-output-04.jsonl"
+
+# --- Validate inputs ---
+[[ -f "$CONFIG_FILE" ]] || { echo "error: config not found: $CONFIG_FILE" >&2; exit 1; }
+[[ -f "$CANDIDATES_FILE" ]] || { echo "error: candidates not found: $CANDIDATES_FILE" >&2; exit 1; }
+command -v claude >/dev/null || { echo "error: claude CLI not found in PATH" >&2; exit 1; }
+command -v jq >/dev/null || { echo "error: jq not found in PATH" >&2; exit 1; }
+command -v yj >/dev/null || { echo "error: yj not found in PATH" >&2; exit 1; }
+
+# --- Extract curate config ---
+CONFIG_JSON=$(yj < "$CONFIG_FILE")
+MODEL=$(echo "$CONFIG_JSON" | jq -r '.curate.model // "sonnet"')
+MAX_TERMS=$(echo "$CONFIG_JSON" | jq -r '.curate.max_terms // 200')
+USER_PROMPT=$(echo "$CONFIG_JSON" | jq -r '.curate.prompt // ""')
+
+# Extract claude_settings to a temp file for --settings
+SETTINGS_FILE=$(mktemp)
+trap 'rm -f "$SETTINGS_FILE"' EXIT
+echo "$CONFIG_JSON" | jq '.curate.claude_settings // {}' > "$SETTINGS_FILE"
+
+echo "Config: $CONFIG_FILE" >&2
+echo "Model: $MODEL | Max terms: $MAX_TERMS" >&2
+echo "Settings: $(cat "$SETTINGS_FILE")" >&2
+
+# --- Build candidates payload ---
+CANDIDATES_JSON=$(yj < "$CANDIDATES_FILE")
+CANDIDATE_COUNT=$(echo "$CANDIDATES_JSON" | jq '.candidates | length')
+
+if [[ "$FULL_MODE" == true ]]; then
+    # Send the full YAML with context snippets
+    PAYLOAD=$(cat "$CANDIDATES_FILE")
+    PAYLOAD_SIZE=$(echo "$PAYLOAD" | wc -c | tr -d ' ')
+    echo "Mode: FULL (raw YAML with context)" >&2
+    echo "Candidates: $CANDIDATE_COUNT terms, payload size: $PAYLOAD_SIZE bytes" >&2
+else
+    # Compact format: term | score | file1, file2, ...
+    PAYLOAD=$(echo "$CANDIDATES_JSON" | jq -r '
+      "Source: \(.source_dir) (\(.document_count) documents)\n" +
+      (.candidates[] | "\(.term) | \(.score) | \(.locations | map(.file) | join(", "))")
+    ')
+    PAYLOAD_SIZE=$(echo "$PAYLOAD" | wc -c | tr -d ' ')
+    echo "Mode: COMPACT" >&2
+    echo "Candidates: $CANDIDATE_COUNT terms, payload size: $PAYLOAD_SIZE bytes" >&2
+fi
+
+# --- Schema: YAML → JSON ---
+SCHEMA_JSON=$(yj < "$PROJECT_DIR/config/curate-schema.yaml")
+
+# --- System prompt ---
+read -r -d '' SYSTEM_PROMPT << 'SYSPROMPT' || true
+You are a professional book indexer and glossary editor. You receive raw keyword candidates extracted from a technical documentation corpus and produce a curated index.
+
+Your job:
+
+1. **Keep** terms that a reader would actually look up in a back-of-book index. These are specific concepts, tools, protocols, configuration options, and named entities.
+
+2. **Kill** noise: sentence fragments ("Code makes Git"), generic words ("time", "set", "create"), and terms that are too vague to be useful index entries. But err on the side of inclusion — post-processing will filter further. If a reader might plausibly look it up, keep it.
+
+3. **Merge** synonyms and variants into a single canonical entry. List the absorbed forms as aliases. Aliases MUST be exact strings from the candidate input — they are used as join keys to map source locations in post-processing.
+
+4. **Hierarchy**: assign a `parent` when a term is clearly a subtype of a broader concept. Example: "OAuth" → parent "authentication". Don't force hierarchy where it doesn't exist.
+
+5. **Definitions**: write a one-sentence glossary definition for each term. Should be understandable without reading the source material. ~20-30 words max.
+
+6. **see_also**: link related terms the reader might also want. Only use terms that exist in your output.
+
+7. **main_files**: for each term, identify which source files contain substantive discussion (not just a passing mention). These become bold page numbers in the printed index.
+
+8. **Suggest** important terms the extraction missed, if any are obvious from the file names and term context. Be comprehensive — suggest every term a reader might look up that isn't already in the candidate list.
+
+SYSPROMPT
+
+# Append input format description based on mode
+if [[ "$FULL_MODE" == true ]]; then
+    SYSTEM_PROMPT+="
+
+Input format: YAML with fields per candidate: term, score (0.0-1.0, higher = more relevant), and locations (file + context snippet showing surrounding prose). Use the context snippets to write better definitions and identify main_files."
+else
+    SYSTEM_PROMPT+="
+
+Input format: each line is \`term | score | file1, file2, ...\`
+Score range is 0.0-1.0 (higher = more relevant). Files are where the term was found."
+fi
+
+# --- No-plugins directory ---
+PLUGIN_DIR="$PROJECT_DIR/no-plugins"
+if [[ ! -d "$PLUGIN_DIR" ]]; then
+    echo "Creating no-plugins skeleton at $PLUGIN_DIR" >&2
+    mkdir -p "$PLUGIN_DIR/cache" "$PLUGIN_DIR/marketplaces"
+    echo '{"version":2,"plugins":{}}' > "$PLUGIN_DIR/installed_plugins.json"
+    echo '{}' > "$PLUGIN_DIR/known_marketplaces.json"
+fi
+
+# --- Build stdin payload ---
+# Compact candidates + optional user prompt guidance + instruction
+INSTRUCTION="Curate the above candidates into a back-of-book index. Follow the system prompt instructions exactly. Be comprehensive."
+
+build_stdin() {
+    echo "$PAYLOAD"
+    echo ""
+    if [[ -n "$USER_PROMPT" ]]; then
+        echo "$USER_PROMPT"
+        echo ""
+    fi
+    echo "$INSTRUCTION"
+}
+
+# --- Clean previous output ---
+rm -f "$OUTPUT_FILE" "$LOG_FILE"
+
+echo "Invoking claude ($MODEL)..." >&2
+START_TIME=$(date +%s)
+
+# --- Run ---
+build_stdin | CLAUDECODE="" CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000 claude --print \
+    --json-schema "$SCHEMA_JSON" \
+    --model "$MODEL" \
+    --system-prompt "$SYSTEM_PROMPT" \
+    --output-format stream-json \
+    --include-partial-messages \
+    --tools "" \
+    --no-session-persistence \
+    --disable-slash-commands \
+    --effort max \
+    --plugin-dir "$PLUGIN_DIR" \
+    --settings "$SETTINGS_FILE" \
+    --setting-sources local \
+    --verbose \
+    | tee "$LOG_FILE" \
+    | jq -rj 'select(.type == "stream_event" and .event.delta.type? == "input_json_delta") | .event.delta.partial_json' \
+    > "$OUTPUT_FILE"
+
+END_TIME=$(date +%s)
+ELAPSED=$((END_TIME - START_TIME))
+
+# --- Report ---
+if [[ -s "$OUTPUT_FILE" ]]; then
+    TERM_COUNT=$(jq '.terms | length' "$OUTPUT_FILE" 2>/dev/null || echo "?")
+    SUGGESTED_COUNT=$(jq '.suggested | length' "$OUTPUT_FILE" 2>/dev/null || echo "0")
+    echo "Done in ${ELAPSED}s. Terms: $TERM_COUNT, Suggested: $SUGGESTED_COUNT" >&2
+    echo "Output: $OUTPUT_FILE" >&2
+    echo "Log: $LOG_FILE" >&2
+else
+    echo "error: no output produced (${ELAPSED}s elapsed)" >&2
+    echo "Check log: $LOG_FILE" >&2
+    exit 1
+fi

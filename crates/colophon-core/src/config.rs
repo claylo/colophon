@@ -71,6 +71,12 @@ pub struct ExtractConfig {
     pub min_score: f64,
     /// Maximum number of candidates to emit.
     pub max_candidates: usize,
+    /// Maximum document percentage for a term (0.0 to 1.0).
+    ///
+    /// If a term appears in more than this fraction of the corpus, it is
+    /// considered definitional (the material is *about* that term) and
+    /// excluded from the index. Set to `1.0` to disable.
+    pub max_doc_pct: f64,
     /// Stop word configuration for n-gram trimming and TF-IDF.
     pub stop_words: StopWordsConfig,
     /// How exclude_terms matches candidates: `contains` or `exact`.
@@ -89,6 +95,7 @@ impl Default for ExtractConfig {
             ngram_range: [1, 3],
             min_score: 0.1,
             max_candidates: 500,
+            max_doc_pct: 0.7,
             stop_words: StopWordsConfig::default(),
             exclude_terms_match: MatchMode::default(),
             exclude_terms_case: CaseSensitivity::default(),
@@ -165,10 +172,58 @@ pub enum CaseSensitivity {
     Insensitive,
 }
 
+/// Configuration for the Claude-powered curation pipeline.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(default)]
+pub struct CurateConfig {
+    /// Claude model to use (passed as `claude --model`).
+    pub model: String,
+    /// Maximum number of terms in the curated output.
+    pub max_terms: usize,
+    /// Path to the candidates file (input from extract phase).
+    pub candidates: String,
+    /// Replace the built-in system prompt entirely.
+    /// When set, the default structural instructions are not used.
+    pub system_prompt: Option<String>,
+    /// Additional guidance appended after the candidates payload.
+    /// Use for domain-specific steering (e.g., "this is a book about X").
+    pub prompt: Option<String>,
+    /// Send full YAML with context snippets instead of compact format.
+    pub full_candidates: bool,
+    /// Effort level for the Claude CLI (`low`, `medium`, `high`, `max`).
+    pub effort: String,
+    /// Maximum output tokens per turn (set via `CLAUDE_CODE_MAX_OUTPUT_TOKENS`).
+    pub max_output_tokens: u32,
+    /// Maximum budget in USD. If set, `curate` aborts when the estimated
+    /// cost exceeds this value.
+    pub max_budget_usd: Option<f64>,
+    /// Settings passed through to the Claude CLI via `--settings`.
+    /// Written to a temp file as JSON. Use for `alwaysThinkingEnabled`,
+    /// `effortLevel`, `fastMode`, etc.
+    pub claude_settings: serde_json::Value,
+}
+
+impl Default for CurateConfig {
+    fn default() -> Self {
+        Self {
+            model: "sonnet".to_string(),
+            max_terms: 200,
+            candidates: "colophon-candidates.yaml".to_string(),
+            system_prompt: None,
+            prompt: None,
+            full_candidates: false,
+            effort: "high".to_string(),
+            max_output_tokens: 64_000,
+            max_budget_usd: None,
+            claude_settings: serde_json::json!({}),
+        }
+    }
+}
+
 /// The configuration for colophon.
 ///
-/// Add your configuration fields here. This struct is deserialized from
-/// config files found during discovery (TOML, YAML, or JSON).
+/// This struct is deserialized from config files found during discovery
+/// (TOML, YAML, or JSON).
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
 #[serde(default)]
 pub struct Config {
@@ -180,6 +235,8 @@ pub struct Config {
     pub source: SourceConfig,
     /// Keyword extraction pipeline settings.
     pub extract: ExtractConfig,
+    /// Claude curation pipeline settings.
+    pub curate: CurateConfig,
 }
 
 /// Log level configuration.

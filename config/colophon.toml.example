@@ -16,37 +16,182 @@
 # Logging
 # ------------------------------------------------------------------------------
 
-# Minimum log level to display.
+# Minimum log level.
 # Values: "debug", "info", "warn", "error"
 # Default: "info"
-# Can be overridden with --verbose (-v) or --quiet (-q) flags.
+# Override at runtime with -v (debug), -vv (trace), or -q (error).
 log_level = "info"
 
-# Log files are written as JSONL with daily rotation.
-# Default paths:
-# - /var/log/colophon.jsonl (Unix, if writable)
-# - ~/.local/share/colophon/logs/colophon.jsonl (fallback)
-# Override with environment variables:
-# - COLOPHON_LOG_PATH=/path/to/colophon.jsonl  (rotated daily)
-# - COLOPHON_LOG_DIR=/path/to/log/dir
-# - COLOPHON_ENV=dev
-# Config options:
-# - log_dir = "/path/to/log/dir"
-# - otel_endpoint = "http://127.0.0.1:4317"
+# Directory for JSONL log files (daily rotation).
+# Falls back to platform defaults if unset:
+#   - /var/log/colophon.jsonl (Unix, if writable)
+#   - ~/.local/share/colophon/logs/colophon.jsonl (fallback)
+# Environment variable overrides: COLOPHON_LOG_PATH, COLOPHON_LOG_DIR
+# log_dir = "/path/to/log/dir"
 
 # ------------------------------------------------------------------------------
-# Add your configuration options below
+# Source — where to find content files
 # ------------------------------------------------------------------------------
 
-# Example: API endpoint
-# api_url = "https://api.example.com"
+[source]
 
-# Example: Feature flags
-# [features]
-# experimental = false
-# telemetry = true
+# Root directory to scan for content files.
+# Default: "."
+dir = "."
 
-# Example: Output settings
-# [output]
-# format = "text"  # "text", "json", "table"
-# color = "auto"   # "auto", "always", "never"
+# File extensions to include (without the leading dot).
+# Default: ["md"]
+extensions = ["md"]
+
+# File names to exclude from processing (exact filename match).
+# Default: []
+# exclude = ["README.md", "CHANGELOG.md"]
+
+# ------------------------------------------------------------------------------
+# Extract — keyword extraction pipeline settings
+# ------------------------------------------------------------------------------
+
+[extract]
+
+# N-gram range for keyword extraction [min, max].
+# Controls the word-length of candidate phrases.
+# [1, 1] = single words only, [1, 3] = up to 3-word phrases.
+# Default: [1, 3]
+ngram_range = [1, 3]
+
+# Minimum relevance score threshold (0.0 to 1.0).
+# Terms scoring below this are discarded. Lower = more candidates.
+# Default: 0.1
+min_score = 0.1
+
+# Maximum number of candidates to emit.
+# After scoring, the top N candidates (by score) are kept,
+# then sorted alphabetically for human review.
+# Default: 500
+max_candidates = 500
+
+# Maximum document percentage for a term (0.0 to 1.0).
+# If a term appears in more than this fraction of the corpus, it is
+# considered definitional — the material is *about* that term, so it
+# doesn't belong in an index. Set to 1.0 to disable.
+# Default: 0.7
+max_doc_pct = 0.7
+
+# --- Stop words ---
+
+[extract.stop_words]
+
+# Which stop word corpus to use.
+# Values: "iso" (60+ languages), "nltk" (23 languages, different coverage)
+# Default: "iso"
+source = "iso"
+
+# Language code (ISO 639-1).
+# Examples: "en", "de", "fr", "es", "pt", "it", "nl", "ja"
+# Default: "en"
+language = "en"
+
+# --- Exclude terms ---
+
+# How exclude_terms patterns match against candidate terms.
+# Values:
+#   "contains"  — candidate excluded if it contains the pattern as a substring
+#   "exact"     — candidate excluded only on exact (full-string) match
+#   "regex"     — each pattern is a regular expression tested against the term
+# Default: "contains"
+# extract.exclude_terms_match = "contains"
+
+# Case sensitivity for exclude_terms matching.
+# Values: "sensitive", "insensitive"
+# Default: "sensitive"
+# In regex mode with "insensitive", patterns are wrapped with (?i).
+# extract.exclude_terms_case = "sensitive"
+
+# Terms to exclude from extraction results.
+# Interpretation depends on exclude_terms_match above.
+# Default: []
+# extract.exclude_terms = ["Chapter", "Section"]
+
+# --- Known terms ---
+
+# Canonical terms with optional variant spellings.
+# When a candidate contains a known term or variant (substring match),
+# it is absorbed into the canonical form. This consolidates noisy n-grams
+# like "OAuth 2.0 framework" and "OAuth tokens" into a single "OAuth" entry.
+#
+# Caution: short known terms (e.g., "AI") will match any candidate containing
+# that substring ("FAIR", "RAIL"). Keep terms specific enough to avoid
+# false positives.
+
+# [[extract.known_terms]]
+# term = "OAuth"
+# variants = ["OAuth 2.0", "OAuth2"]
+#
+# [[extract.known_terms]]
+# term = "TLS"
+# variants = ["Transport Layer Security"]
+
+# ------------------------------------------------------------------------------
+# Curate — Claude-powered term curation
+# ------------------------------------------------------------------------------
+
+[curate]
+
+# Claude model to use (passed as `claude --model`).
+# Values: "sonnet", "opus", "haiku", or a full model ID.
+# Append [1m] for 1M context window (e.g., "opus[1m]").
+# Default: "sonnet"
+model = "sonnet"
+
+# Maximum number of terms in the curated output.
+# Default: 200
+max_terms = 200
+
+# Path to the candidates file (input from extract phase).
+# Default: "colophon-candidates.yaml"
+candidates = "colophon-candidates.yaml"
+
+# Send full YAML with context snippets instead of compact format.
+# Full mode uses more tokens (~175K vs ~7K) but produces better
+# definitions and more suggested terms.
+# Default: false (use --full flag to override at runtime)
+# full_candidates = true
+
+# Effort level for the Claude CLI.
+# Values: "low", "medium", "high", "max"
+# Default: "high"
+effort = "high"
+
+# Maximum output tokens per turn.
+# Higher values reduce wasted turns from max_tokens truncation.
+# Default: 64000
+max_output_tokens = 64000
+
+# Maximum budget in USD. Abort if estimated cost exceeds this.
+# Can also be set at runtime with --max-budget-usd.
+# Default: unset (no limit)
+# max_budget_usd = 10.0
+
+# Settings passed to the Claude CLI via --settings.
+# These control Claude's behavior (thinking, speed, etc.).
+[curate.claude_settings]
+alwaysThinkingEnabled = true
+effortLevel = "high"
+fastMode = true
+
+# Replace the built-in system prompt entirely.
+# When set, the default structural instructions about curation,
+# merging, hierarchy, and definitions are NOT used.
+# Most users should leave this unset and use `prompt` instead.
+# curate.system_prompt = "You are a custom indexer..."
+
+# Additional guidance appended after the candidates.
+# Use for domain-specific steering.
+# curate.prompt = """
+# This is documentation for Claude Code, a CLI tool.
+# Focus on CLI commands, configuration options, and integration patterns.
+# Merge provider-specific variants (Bedrock/Vertex/Foundry) under canonical names.
+# """
+
+# Extra arguments can be passed through to the claude CLI at runtime:
+#   colophon curate -- --max-budget-usd 5.00
