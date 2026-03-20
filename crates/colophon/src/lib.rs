@@ -53,7 +53,7 @@ ENVIRONMENT VARIABLES:
 /// Command-line interface definition for colophon.
 #[derive(Parser)]
 #[command(name = "colophon")]
-#[command(about = "A modern, production-ready Rust CLI application.", long_about = None)]
+#[command(about = "Generate book indexes and glossaries from Markdown or Typst.", long_about = None)]
 #[command(version, arg_required_else_help = true)]
 #[command(after_long_help = ENV_HELP)]
 pub struct Cli {

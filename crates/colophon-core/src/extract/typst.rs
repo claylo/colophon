@@ -4,7 +4,7 @@
 //! headings, code blocks, raw blocks, math equations, labels,
 //! and function calls — same strategy as the markdown extractor.
 
-use typst_syntax::{parse, SyntaxKind, SyntaxNode};
+use typst_syntax::{SyntaxKind, SyntaxNode, parse};
 
 /// Extract prose text from a Typst document.
 ///

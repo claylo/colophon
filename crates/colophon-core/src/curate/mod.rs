@@ -167,9 +167,15 @@ pub fn run_incremental(
 
     let ratio = diff.new_ratio();
     if ratio >= 0.7 {
-        tracing::warn!("{}% new candidates — strongly recommend --full-rebuild for better cross-term relationships", (ratio * 100.0) as u32);
+        tracing::warn!(
+            "{}% new candidates — strongly recommend --full-rebuild for better cross-term relationships",
+            (ratio * 100.0) as u32
+        );
     } else if ratio >= 0.4 {
-        tracing::warn!("{}% new candidates — consider --full-rebuild for better results", (ratio * 100.0) as u32);
+        tracing::warn!(
+            "{}% new candidates — consider --full-rebuild for better results",
+            (ratio * 100.0) as u32
+        );
     }
 
     let mut terms = existing.terms.clone();
@@ -281,10 +287,7 @@ fn rebuild_children(terms: &mut [CuratedTerm]) {
         map
     };
     for term in terms.iter_mut() {
-        term.children = parent_map
-            .get(&term.term)
-            .cloned()
-            .unwrap_or_default();
+        term.children = parent_map.get(&term.term).cloned().unwrap_or_default();
         term.children.sort_unstable();
     }
 }

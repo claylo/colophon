@@ -3,7 +3,7 @@
 //! Uses `ah-ah-ah` for offline Claude token counting. Estimates are
 //! conservative (~4% overcount) so budget enforcement is safe.
 
-use ah_ah_ah::{count_tokens, Backend};
+use ah_ah_ah::{Backend, count_tokens};
 
 /// Per-million-token pricing for a Claude model.
 #[derive(Debug, Clone, Copy)]
