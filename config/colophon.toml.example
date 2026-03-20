@@ -40,8 +40,10 @@ log_level = "info"
 dir = "."
 
 # File extensions to include (without the leading dot).
+# Supported: md (Markdown), typ (Typst)
 # Default: ["md"]
 extensions = ["md"]
+# extensions = ["md", "typ"]
 
 # File names to exclude from processing (exact filename match).
 # Default: []

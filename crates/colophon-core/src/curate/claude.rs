@@ -564,8 +564,10 @@ mod tests {
 
     #[test]
     fn system_prompt_full_mode() {
-        let mut config = CurateConfig::default();
-        config.full_candidates = true;
+        let config = CurateConfig {
+            full_candidates: true,
+            ..CurateConfig::default()
+        };
         let prompt = build_system_prompt(&config);
         assert!(prompt.contains("indexer"));
         assert!(prompt.contains("YAML with fields per candidate"));
@@ -573,8 +575,10 @@ mod tests {
 
     #[test]
     fn system_prompt_custom_replaces_default() {
-        let mut config = CurateConfig::default();
-        config.system_prompt = Some("Custom prompt.".to_string());
+        let config = CurateConfig {
+            system_prompt: Some("Custom prompt.".to_string()),
+            ..CurateConfig::default()
+        };
         let prompt = build_system_prompt(&config);
         assert!(prompt.starts_with("Custom prompt."));
         assert!(!prompt.contains("indexer"));
@@ -605,8 +609,10 @@ mod tests {
 
     #[test]
     fn stdin_payload_full() {
-        let mut config = CurateConfig::default();
-        config.full_candidates = true;
+        let config = CurateConfig {
+            full_candidates: true,
+            ..CurateConfig::default()
+        };
         let candidates = CandidatesFile {
             version: 1,
             generated: "2026-03-10T12:00:00Z".to_string(),
@@ -621,8 +627,10 @@ mod tests {
 
     #[test]
     fn stdin_payload_with_user_prompt() {
-        let mut config = CurateConfig::default();
-        config.prompt = Some("Focus on security terms.".to_string());
+        let config = CurateConfig {
+            prompt: Some("Focus on security terms.".to_string()),
+            ..CurateConfig::default()
+        };
         let candidates = CandidatesFile {
             version: 1,
             generated: "2026-03-10T12:00:00Z".to_string(),
