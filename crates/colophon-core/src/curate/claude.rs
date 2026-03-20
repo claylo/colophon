@@ -56,9 +56,13 @@ const INPUT_FORMAT_FULL: &str = "\n\nInput format: YAML with fields per candidat
 /// To regenerate: `yj < config/curate-schema.yaml > config/curate-schema.json`
 const SCHEMA_JSON: &str = include_str!("../../../../config/curate-schema.json");
 
+/// JSON Schema for the curate delta output (incremental mode).
+// Used by incremental invoke path (Task 6) and tests.
+#[allow(dead_code)]
+const DELTA_SCHEMA_JSON: &str = include_str!("../../../../config/curate-delta-schema.json");
+
 /// Default instruction appended to stdin payload.
-const DEFAULT_INSTRUCTION: &str =
-    "Curate the above candidates into a back-of-book index. Follow the system prompt instructions exactly. Be comprehensive.";
+const DEFAULT_INSTRUCTION: &str = "Curate the above candidates into a back-of-book index. Follow the system prompt instructions exactly. Be comprehensive.";
 
 /// Result of a Claude CLI invocation.
 pub(super) struct InvokeResult {
@@ -158,6 +162,105 @@ fn build_stdin_payload(
         .unwrap_or_else(|| DEFAULT_INSTRUCTION.to_string());
 
     format!("{payload}\n\n{instruction}")
+}
+
+/// The incremental system prompt base.
+// Used by build_incremental_system_prompt (wired in Task 6) and tests.
+#[allow(dead_code)]
+const DEFAULT_INCREMENTAL_SYSTEM_PROMPT_BASE: &str = r#"You are a professional book indexer updating an existing back-of-book index with new candidate terms.
+
+EXISTING INDEX (for context — do NOT regenerate these):
+"#;
+
+/// Instructions appended after the existing index in incremental mode.
+// Used by build_incremental_system_prompt (wired in Task 6) and tests.
+#[allow(dead_code)]
+const INCREMENTAL_INSTRUCTIONS: &str = r#"
+Instructions:
+1. For each new candidate: add as new term, merge as alias of existing, or discard
+2. For stale terms: recommend keep (suggested/conceptual) or remove
+3. If a new term should be a child of an existing term, set parent accordingly
+4. If new terms create new see_also relationships with existing terms, include the modification
+5. Return ONLY additions, modifications, and removals — not unchanged terms
+6. Every modification MUST include a reason"#;
+
+/// Build the incremental system prompt including the compact existing index.
+// Called by system_prompt_for_incremental and directly in tests.
+#[allow(dead_code)]
+pub(super) fn build_incremental_system_prompt(
+    config: &CurateConfig,
+    compact_index: &str,
+) -> String {
+    let base = config.system_prompt.as_deref().map_or_else(
+        || {
+            format!(
+                "{DEFAULT_INCREMENTAL_SYSTEM_PROMPT_BASE}{compact_index}{INCREMENTAL_INSTRUCTIONS}"
+            )
+        },
+        |custom| format!("{custom}\n\nEXISTING INDEX:\n{compact_index}{INCREMENTAL_INSTRUCTIONS}"),
+    );
+
+    let format_suffix = if config.full_candidates {
+        INPUT_FORMAT_FULL
+    } else {
+        INPUT_FORMAT_COMPACT
+    };
+
+    format!("{base}{format_suffix}")
+}
+
+/// Build the incremental stdin payload: new candidates + stale terms.
+// Called by stdin_payload_for_incremental and directly in tests.
+#[allow(dead_code)]
+pub(super) fn build_incremental_stdin_payload(
+    config: &CurateConfig,
+    new_candidates_yaml: &str,
+    stale_terms: &[String],
+) -> String {
+    let mut payload = String::from("NEW CANDIDATES to integrate:\n");
+    payload.push_str(new_candidates_yaml);
+
+    if !stale_terms.is_empty() {
+        payload.push_str("\n\nPOTENTIALLY STALE terms (no longer found in corpus):\n");
+        for term in stale_terms {
+            payload.push_str("- ");
+            payload.push_str(term);
+            payload.push('\n');
+        }
+    }
+
+    let instruction = config
+        .prompt
+        .as_deref()
+        .map(|p| format!("{p}\n\n{DEFAULT_INSTRUCTION}"))
+        .unwrap_or_else(|| DEFAULT_INSTRUCTION.to_string());
+
+    format!("{payload}\n\n{instruction}")
+}
+
+/// Return the incremental system prompt for cost estimation.
+// Wired in Task 6 (curate/mod.rs incremental path).
+#[allow(dead_code)]
+pub(super) fn system_prompt_for_incremental(config: &CurateConfig, compact_index: &str) -> String {
+    build_incremental_system_prompt(config, compact_index)
+}
+
+/// Return the incremental stdin payload for cost estimation.
+// Wired in Task 6 (curate/mod.rs incremental path).
+#[allow(dead_code)]
+pub(super) fn stdin_payload_for_incremental(
+    config: &CurateConfig,
+    new_candidates_yaml: &str,
+    stale_terms: &[String],
+) -> String {
+    build_incremental_stdin_payload(config, new_candidates_yaml, stale_terms)
+}
+
+/// Return the delta JSON schema string.
+// Wired in Task 6 (curate/mod.rs incremental invoke path).
+#[allow(dead_code)]
+pub(super) const fn delta_schema_json() -> &'static str {
+    DELTA_SCHEMA_JSON
 }
 
 /// Create a no-plugins skeleton directory in temp.
@@ -555,22 +658,22 @@ mod tests {
     }
 
     #[test]
-    fn system_prompt_compact_mode() {
+    fn system_prompt_default_is_full_mode() {
         let config = CurateConfig::default();
         let prompt = build_system_prompt(&config);
         assert!(prompt.contains("indexer"));
-        assert!(prompt.contains("term | score | file1"));
+        assert!(prompt.contains("YAML with fields per candidate"));
     }
 
     #[test]
-    fn system_prompt_full_mode() {
+    fn system_prompt_compact_mode() {
         let config = CurateConfig {
-            full_candidates: true,
+            full_candidates: false,
             ..CurateConfig::default()
         };
         let prompt = build_system_prompt(&config);
         assert!(prompt.contains("indexer"));
-        assert!(prompt.contains("YAML with fields per candidate"));
+        assert!(prompt.contains("term | score | file1"));
     }
 
     #[test]
@@ -586,7 +689,10 @@ mod tests {
 
     #[test]
     fn stdin_payload_compact() {
-        let config = CurateConfig::default();
+        let config = CurateConfig {
+            full_candidates: false,
+            ..CurateConfig::default()
+        };
         let candidates = CandidatesFile {
             version: 1,
             generated: "2026-03-10T12:00:00Z".to_string(),
@@ -609,10 +715,7 @@ mod tests {
 
     #[test]
     fn stdin_payload_full() {
-        let config = CurateConfig {
-            full_candidates: true,
-            ..CurateConfig::default()
-        };
+        let config = CurateConfig::default(); // full_candidates=true by default
         let candidates = CandidatesFile {
             version: 1,
             generated: "2026-03-10T12:00:00Z".to_string(),
@@ -641,6 +744,51 @@ mod tests {
         let payload = build_stdin_payload(&config, &candidates, "");
         assert!(payload.contains("Focus on security terms."));
         assert!(payload.contains(DEFAULT_INSTRUCTION));
+    }
+
+    #[test]
+    fn incremental_system_prompt_contains_index_and_instructions() {
+        let config = CurateConfig::default();
+        let compact_index = "OAuth | parent: auth | aliases: OAuth 2.0\nTLS | (top-level)\n";
+        let prompt = build_incremental_system_prompt(&config, compact_index);
+        assert!(prompt.contains("updating an existing back-of-book index"));
+        assert!(prompt.contains("EXISTING INDEX"));
+        assert!(prompt.contains("OAuth | parent: auth"));
+        assert!(prompt.contains("For each new candidate"));
+    }
+
+    #[test]
+    fn incremental_stdin_payload_contains_candidates_and_stale() {
+        let config = CurateConfig {
+            full_candidates: true,
+            ..CurateConfig::default()
+        };
+        let candidates_yaml = "- term: PKCE\n  score: 0.9\n";
+        let stale = vec!["old_term".to_string()];
+        let payload = build_incremental_stdin_payload(&config, candidates_yaml, &stale);
+        assert!(payload.contains("PKCE"));
+        assert!(payload.contains("POTENTIALLY STALE"));
+        assert!(payload.contains("old_term"));
+    }
+
+    #[test]
+    fn incremental_stdin_payload_no_stale_section_when_empty() {
+        let config = CurateConfig {
+            full_candidates: true,
+            ..CurateConfig::default()
+        };
+        let payload = build_incremental_stdin_payload(&config, "candidates", &[]);
+        assert!(!payload.contains("POTENTIALLY STALE"));
+    }
+
+    #[test]
+    fn delta_schema_json_is_valid() {
+        let value: serde_json::Value =
+            serde_json::from_str(DELTA_SCHEMA_JSON).expect("delta schema should be valid JSON");
+        assert_eq!(value["type"], "object");
+        assert!(value["properties"]["additions"].is_object());
+        assert!(value["properties"]["modifications"].is_object());
+        assert!(value["properties"]["removals"].is_object());
     }
 
     #[test]
