@@ -9,6 +9,7 @@
 //! - [`error`] - Error types and result aliases
 //! - [`extract`] - Extraction pipeline for keyword candidates
 //! - [`curate`] - Claude-powered term curation pipeline
+//! - [`render`] - Render pipeline for index markers and glossary
 //!
 //! # Quick Start
 //!
@@ -32,6 +33,11 @@ pub mod error;
 
 pub mod extract;
 
+pub mod render;
+
 pub use config::{Config, ConfigLoader, LogLevel};
 
-pub use error::{ConfigError, ConfigResult, CurateError, CurateResult, ExtractError, ExtractResult};
+pub use error::{
+    ConfigError, ConfigResult, CurateError, CurateResult, ExtractError, ExtractResult,
+    RenderError, RenderResult,
+};

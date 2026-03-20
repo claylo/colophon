@@ -89,3 +89,29 @@ pub enum CurateError {
 
 /// Result type alias using [`CurateError`].
 pub type CurateResult<T> = Result<T, CurateError>;
+
+/// Errors that can occur during rendering.
+#[derive(Error, Debug)]
+pub enum RenderError {
+    /// Failed to read or write files.
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+
+    /// Failed to deserialize the curated terms file.
+    #[error("failed to parse terms file: {0}")]
+    ParseTerms(#[from] serde_yaml::Error),
+
+    /// Cycle detected in parent chain.
+    #[error("cycle in parent chain: {chain}")]
+    ParentCycle {
+        /// The cycle path (e.g., "A -> B -> A").
+        chain: String,
+    },
+
+    /// No terms found in the terms file.
+    #[error("no terms in {0}")]
+    NoTerms(String),
+}
+
+/// Result type alias using [`RenderError`].
+pub type RenderResult<T> = Result<T, RenderError>;

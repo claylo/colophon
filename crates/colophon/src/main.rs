@@ -73,6 +73,7 @@ fn main() -> anyhow::Result<()> {
         }
         Commands::Extract(args) => commands::extract::cmd_extract(args, cli.json, &config),
         Commands::Info(args) => commands::info::cmd_info(args, cli.json, &config, &config_sources),
+        Commands::Render(args) => commands::render::cmd_render(args, cli.json, &config),
     };
     if let Err(ref err) = result {
         tracing::error!(error = %err, "fatal error");
