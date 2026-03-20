@@ -292,3 +292,16 @@ fn extract_json_outputs_valid_json() {
         serde_json::from_str(&stdout).expect("--json should output valid JSON");
     assert_eq!(json["version"], 1);
 }
+
+// =============================================================================
+// Curate Command
+// =============================================================================
+
+#[test]
+fn curate_help_shows_full_rebuild_flag() {
+    cmd()
+        .args(["curate", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--full-rebuild"));
+}
