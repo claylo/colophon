@@ -101,6 +101,8 @@ pub enum Commands {
     Extract(commands::extract::ExtractArgs),
     /// Show package information
     Info(commands::info::InfoArgs),
+    /// Render curated terms as index markers in source files
+    Render(commands::render::RenderArgs),
 }
 
 /// Returns the clap command for documentation generation

@@ -55,7 +55,7 @@ impl Default for SourceConfig {
     fn default() -> Self {
         Self {
             dir: ".".to_string(),
-            extensions: vec!["md".to_string()],
+            extensions: vec!["md".to_string(), "typ".to_string()],
             exclude: Vec::new(),
         }
     }
@@ -770,7 +770,7 @@ max_candidates = 300
     fn test_source_and_extract_defaults() {
         let config = Config::default();
         assert_eq!(config.source.dir, ".");
-        assert_eq!(config.source.extensions, vec!["md"]);
+        assert_eq!(config.source.extensions, vec!["md", "typ"]);
         assert!(config.source.exclude.is_empty());
         assert_eq!(config.extract.ngram_range, [1, 3]);
         assert_eq!(config.extract.min_score, 0.1);

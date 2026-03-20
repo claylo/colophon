@@ -7,3 +7,5 @@ pub mod doctor;
 pub mod extract;
 
 pub mod info;
+
+pub mod render;
