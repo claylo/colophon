@@ -2,6 +2,7 @@
 
 mod claude;
 pub mod cost;
+pub mod incremental;
 pub mod terms;
 
 use std::collections::HashMap;
