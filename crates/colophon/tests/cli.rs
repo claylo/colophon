@@ -258,8 +258,8 @@ fn extract_produces_yaml_output() {
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains("candidates"))
-        .stdout(predicate::str::contains("documents"));
+        .stderr(predicate::str::contains("Candidates"))
+        .stderr(predicate::str::contains("Documents"));
 
     assert!(output_file.exists(), "should write candidates file");
     let content = std::fs::read_to_string(&output_file).unwrap();

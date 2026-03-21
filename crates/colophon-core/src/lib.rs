@@ -10,6 +10,7 @@
 //! - [`extract`] - Extraction pipeline for keyword candidates
 //! - [`curate`] - Claude-powered term curation pipeline
 //! - [`render`] - Render pipeline for index markers and glossary
+//! - [`validate`] - Post-curate location validation and alias suggestions
 //!
 //! # Quick Start
 //!
@@ -37,6 +38,9 @@ pub mod observability;
 
 pub mod render;
 
+pub(crate) mod typst_prose;
+
+pub mod validate;
 
 pub use config::{Config, ConfigLoader, LogLevel};
 
