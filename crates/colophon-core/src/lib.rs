@@ -37,6 +37,7 @@ pub mod observability;
 
 pub mod render;
 
+pub mod typst_prose;
 
 pub use config::{Config, ConfigLoader, LogLevel};
 
