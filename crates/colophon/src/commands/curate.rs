@@ -50,6 +50,25 @@ pub struct CurateArgs {
     pub claude_args: Vec<String>,
 }
 
+/// Display validation results (alias suggestions for unresolved locations).
+fn display_validation(
+    terms: &colophon_core::curate::terms::CuratedTermsFile,
+    source_extensions: &[String],
+) {
+    let report = colophon_core::validate::validate_locations(terms, &terms.source_dir, source_extensions);
+    if !report.suggestions.is_empty() {
+        eprintln!();
+        eprintln!(
+            "Validation: {} resolved, {} unresolved",
+            report.resolved, report.unresolved
+        );
+        eprintln!("Suggested aliases for unresolved locations:");
+        for s in &report.suggestions {
+            eprintln!("  {} -> add alias \"{}\"", s.term, s.suggested_alias);
+        }
+    }
+}
+
 /// Format a byte count as a human-readable size.
 fn human_size(bytes: u64) -> String {
     if bytes < 1024 {
@@ -100,6 +119,7 @@ pub fn cmd_curate(mut args: CurateArgs, json: bool, config: &Config) -> anyhow::
             candidates,
             &candidates_yaml,
             &terms_path,
+            &config.source.extensions,
         );
     }
 
@@ -264,6 +284,8 @@ pub fn cmd_curate(mut args: CurateArgs, json: bool, config: &Config) -> anyhow::
         if !result.editorial.is_empty() {
             eprintln!("\n{}", result.editorial);
         }
+
+        display_validation(&result.terms_file, &config.source.extensions);
     }
 
     Ok(())
@@ -277,6 +299,7 @@ fn cmd_curate_incremental(
     candidates: CandidatesFile,
     candidates_yaml: &str,
     terms_path: &Path,
+    source_extensions: &[String],
 ) -> anyhow::Result<()> {
     let output_dir = Path::new(&args.output_dir);
 
@@ -474,6 +497,8 @@ fn cmd_curate_incremental(
         if !result.editorial.is_empty() {
             eprintln!("\n{}", result.editorial);
         }
+
+        display_validation(&result.terms_file, source_extensions);
     }
 
     Ok(())
