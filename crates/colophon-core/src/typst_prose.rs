@@ -5,7 +5,7 @@
 //! (Text and Space nodes), excluding headings, code, math, labels,
 //! refs, links, and function calls.
 
-use typst_syntax::{parse, SyntaxKind, SyntaxNode};
+use typst_syntax::{SyntaxKind, SyntaxNode, parse};
 
 /// Collect byte ranges of prose text in a Typst source.
 ///
@@ -142,9 +142,11 @@ mod tests {
         assert!(ranges.iter().any(|&(s, e)| ch_pos >= s && ch_pos + 8 <= e));
         // "<intro>" label should NOT be in ranges
         let label_pos = source.find("<intro>").unwrap();
-        assert!(!ranges
-            .iter()
-            .any(|&(s, e)| label_pos >= s && label_pos + 7 <= e));
+        assert!(
+            !ranges
+                .iter()
+                .any(|&(s, e)| label_pos >= s && label_pos + 7 <= e)
+        );
     }
 
     #[test]

@@ -55,7 +55,8 @@ fn display_validation(
     terms: &colophon_core::curate::terms::CuratedTermsFile,
     source_extensions: &[String],
 ) {
-    let report = colophon_core::validate::validate_locations(terms, &terms.source_dir, source_extensions);
+    let report =
+        colophon_core::validate::validate_locations(terms, &terms.source_dir, source_extensions);
     if !report.suggestions.is_empty() {
         eprintln!();
         eprintln!(
