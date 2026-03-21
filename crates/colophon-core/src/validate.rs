@@ -1,6 +1,6 @@
 //! Post-curate validation — detect unresolvable locations and suggest aliases.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use crate::curate::terms::CuratedTermsFile;
@@ -92,10 +92,23 @@ pub fn validate_locations(
                 continue;
             }
 
-            // Unresolved — no suggestion heuristic yet.
+            // Unresolved — attempt suggestion.
             report.unresolved += 1;
+            if let Some(suggested) = suggest_alias(&entry.content, &curated.term, prose_ranges) {
+                report.suggestions.push(AliasSuggestion {
+                    term: curated.term.clone(),
+                    file: loc.file.clone(),
+                    suggested_alias: suggested,
+                });
+            }
         }
     }
+
+    // Dedup: keep only the first suggestion per (term, suggested_alias).
+    let mut seen = HashSet::new();
+    report
+        .suggestions
+        .retain(|s| seen.insert((s.term.clone(), s.suggested_alias.clone())));
 
     report
 }
@@ -125,6 +138,47 @@ fn try_find(content: &str, term: &str, prose_ranges: Option<&[(usize, usize)]>) 
         || content.to_lowercase().contains(&term.to_lowercase()),
         |ranges| typst_prose::find_term_offset_in_prose(content, term, ranges).is_some(),
     )
+}
+
+/// Heuristic: try sub-phrases and singular/plural toggling to suggest an alias.
+fn suggest_alias(
+    content: &str,
+    term: &str,
+    prose_ranges: Option<&[(usize, usize)]>,
+) -> Option<String> {
+    let words: Vec<&str> = term.split_whitespace().collect();
+
+    if words.len() >= 2 {
+        // Try suffixes (drop from front): "Amazon Bedrock" -> "Bedrock"
+        for start in 1..words.len() {
+            let suffix = words[start..].join(" ");
+            if try_find(content, &suffix, prose_ranges) {
+                return Some(suffix);
+            }
+        }
+
+        // Try prefixes (drop from end): "Slack integration" -> "Slack"
+        for end in (1..words.len()).rev() {
+            let prefix = words[..end].join(" ");
+            if try_find(content, &prefix, prose_ranges) {
+                return Some(prefix);
+            }
+        }
+    }
+
+    // Singular/plural toggle.
+    let toggled = toggle_plural(term);
+    if try_find(content, &toggled, prose_ranges) {
+        return Some(toggled);
+    }
+
+    None
+}
+
+/// Toggle trailing 's' — naive but good enough for a suggestion heuristic.
+fn toggle_plural(term: &str) -> String {
+    term.strip_suffix('s')
+        .map_or_else(|| format!("{term}s"), str::to_string)
 }
 
 #[cfg(test)]
@@ -166,6 +220,8 @@ mod tests {
                 .collect(),
         }
     }
+
+    // ── Task 2 tests ────────────────────────────────────────────────
 
     #[test]
     fn all_locations_resolve_no_suggestions() {
@@ -277,5 +333,109 @@ mod tests {
         let report = validate_locations(&tf, &tf.source_dir, &[]);
         assert_eq!(report.unresolved, 1);
         assert!(report.suggestions.is_empty());
+    }
+
+    // ── Task 3 tests ────────────────────────────────────────────────
+
+    #[test]
+    fn suggests_alias_for_compound_term_drop_first_word() {
+        let dir = TempDir::new().unwrap();
+        fs::write(
+            dir.path().join("ch01.typ"),
+            "We evaluated Bedrock as a foundation model platform.",
+        )
+        .unwrap();
+
+        let tf = CuratedTermsFile {
+            source_dir: dir.path().to_str().unwrap().to_string(),
+            ..terms_file(vec![term_with_locations(
+                "Amazon Bedrock",
+                vec![],
+                vec![("ch01.typ", false)],
+            )])
+        };
+
+        let report = validate_locations(&tf, &tf.source_dir, &[]);
+        assert_eq!(report.unresolved, 1);
+        assert_eq!(report.suggestions.len(), 1);
+        assert_eq!(report.suggestions[0].suggested_alias, "Bedrock");
+    }
+
+    #[test]
+    fn suggests_multi_word_suffix() {
+        let dir = TempDir::new().unwrap();
+        fs::write(
+            dir.path().join("ch01.typ"),
+            "Vertex AI provides powerful ML capabilities.",
+        )
+        .unwrap();
+
+        let tf = CuratedTermsFile {
+            source_dir: dir.path().to_str().unwrap().to_string(),
+            ..terms_file(vec![term_with_locations(
+                "Google Vertex AI",
+                vec![],
+                vec![("ch01.typ", false)],
+            )])
+        };
+
+        let report = validate_locations(&tf, &tf.source_dir, &[]);
+        assert_eq!(report.unresolved, 1);
+        assert_eq!(report.suggestions.len(), 1);
+        assert_eq!(report.suggestions[0].suggested_alias, "Vertex AI");
+    }
+
+    #[test]
+    fn suggests_singular_for_plural_term() {
+        let dir = TempDir::new().unwrap();
+        fs::write(
+            dir.path().join("ch01.typ"),
+            "Each plugin extends the build system.",
+        )
+        .unwrap();
+
+        let tf = CuratedTermsFile {
+            source_dir: dir.path().to_str().unwrap().to_string(),
+            ..terms_file(vec![term_with_locations(
+                "plugins",
+                vec![],
+                vec![("ch01.typ", false)],
+            )])
+        };
+
+        let report = validate_locations(&tf, &tf.source_dir, &[]);
+        assert_eq!(report.unresolved, 1);
+        assert_eq!(report.suggestions.len(), 1);
+        assert_eq!(report.suggestions[0].suggested_alias, "plugin");
+    }
+
+    #[test]
+    fn deduplicates_suggestions_across_files() {
+        let dir = TempDir::new().unwrap();
+        fs::write(
+            dir.path().join("ch01.typ"),
+            "Bedrock powers our inference layer.",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("ch02.typ"),
+            "Bedrock supports multiple model providers.",
+        )
+        .unwrap();
+
+        let tf = CuratedTermsFile {
+            source_dir: dir.path().to_str().unwrap().to_string(),
+            ..terms_file(vec![term_with_locations(
+                "Amazon Bedrock",
+                vec![],
+                vec![("ch01.typ", false), ("ch02.typ", false)],
+            )])
+        };
+
+        let report = validate_locations(&tf, &tf.source_dir, &[]);
+        assert_eq!(report.unresolved, 2);
+        // Same (term, alias) pair should be deduped to 1.
+        assert_eq!(report.suggestions.len(), 1);
+        assert_eq!(report.suggestions[0].suggested_alias, "Bedrock");
     }
 }
