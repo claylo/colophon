@@ -39,6 +39,8 @@ pub mod render;
 
 pub(crate) mod typst_prose;
 
+pub mod validate;
+
 pub use config::{Config, ConfigLoader, LogLevel};
 
 pub use error::{
