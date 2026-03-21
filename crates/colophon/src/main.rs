@@ -7,7 +7,7 @@ use colophon::{Cli, Commands, commands};
 use colophon_core::config::ConfigLoader;
 use tracing::debug;
 
-mod observability;
+use colophon_core::observability;
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     cli.color.apply();

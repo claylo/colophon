@@ -1,5 +1,6 @@
 # colophon
 
+
 ## Workspace Layout
 
 This is a Cargo workspace. All crates live under `crates/`:
@@ -21,7 +22,8 @@ just test           # cargo nextest run
 just clippy         # lint with pinned toolchain
 just fmt            # cargo fmt --all
 just deny           # security/license audit
-just fix            # auto-fix clippy warningsjust release-check  # pre-release validation
+just fix            # auto-fix clippy warnings
+just release-check  # pre-release validation
 just outdated       # check for outdated dependencies
 just upgrade        # update deps in Cargo.toml and Cargo.lock
 ```
@@ -46,7 +48,6 @@ just upgrade        # update deps in Cargo.toml and Cargo.lock
 3. Wire it up in `match cli.command` in `main.rs`
 4. Add integration tests in `crates/colophon/tests/`
 
-
 ## Do Not
 
 - Commit anything in `target/`
@@ -54,4 +55,3 @@ just upgrade        # update deps in Cargo.toml and Cargo.lock
 - Skip `--all-targets --all-features` when running clippy
 - Use `cargo test` instead of `cargo nextest run`
 - Run raw cargo commands when a `just` recipe exists
-

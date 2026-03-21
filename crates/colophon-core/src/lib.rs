@@ -33,7 +33,10 @@ pub mod error;
 
 pub mod extract;
 
+pub mod observability;
+
 pub mod render;
+
 
 pub use config::{Config, ConfigLoader, LogLevel};
 

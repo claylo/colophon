@@ -10,6 +10,10 @@ permissions:
   id-token: write      # Sigstore OIDC for attestations
   attestations: write  # Persist attestations
 
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   CARGO_TERM_COLOR: always
   PROJECT_NAME: colophon
@@ -18,30 +22,27 @@ jobs:
   generate-changelog:
     name: Generate changelog
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
     outputs:
-      release_body: ${{ steps.git-cliff.outputs.content }}
-      version: ${{ steps.version.outputs.version }}
+      release_body: ${{ steps.changelog.outputs.release_body }}
+      version: ${{ steps.changelog.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
 
-      - name: Extract version
-        id: version
-        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
-
-      - name: Generate changelog
-        uses: orhun/git-cliff-action@c93ef52f3d0ddcdcc9bd5447d98d458a11cd4f72 # v4.7.1
-        id: git-cliff
-        with:
-          config: cliff.toml
-          args: -vv --latest --no-exec --github-repo ${{ github.repository }}
+      - name: Generate release changelog
+        id: changelog
+        uses: ./.github/actions/generate-release-changelog
 
   publish-binaries:
     name: Build ${{ matrix.build.NAME }}
     needs: generate-changelog
     runs-on: ${{ matrix.build.os }}
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -172,7 +173,7 @@ jobs:
 
       - name: Upload release
         if: ${{ !contains(github.ref, '-') }}
-        uses: svenstaro/upload-release-action@b98a3b12e86552593f3e4e577ca8a62aa2f3f22b # 2.11.4
+        uses: svenstaro/upload-release-action@29e53e917877a24fad85510ded594ab3c9ca12de # 2.11.5
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: ${{ env.PROJECT_NAME }}-${{ needs.generate-changelog.outputs.version }}-${{ matrix.build.target }}*
@@ -184,7 +185,7 @@ jobs:
 
       - name: Upload pre-release
         if: ${{ contains(github.ref, '-') }}
-        uses: svenstaro/upload-release-action@b98a3b12e86552593f3e4e577ca8a62aa2f3f22b # 2.11.4
+        uses: svenstaro/upload-release-action@29e53e917877a24fad85510ded594ab3c9ca12de # 2.11.5
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: ${{ env.PROJECT_NAME }}-${{ needs.generate-changelog.outputs.version }}-${{ matrix.build.target }}*
@@ -206,6 +207,9 @@ jobs:
     if: ${{ !contains(github.ref, '-') && vars.CRATES_IO_ENABLED == 'true' }}
     needs: [generate-changelog, publish-binaries]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -223,6 +227,9 @@ jobs:
     if: ${{ !contains(github.ref, '-') && vars.HOMEBREW_ENABLED == 'true' }}
     needs: [generate-changelog, publish-binaries]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
     env:
       VERSION: ${{ needs.generate-changelog.outputs.version }}
     steps:
@@ -292,6 +299,9 @@ jobs:
     if: vars.DEB_ENABLED == 'true'
     needs: [generate-changelog, publish-binaries]
     runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -322,10 +332,11 @@ jobs:
           echo "${{ secrets.GPG_RELEASE_KEY }}" | base64 --decode > private.key
           echo "${{ secrets.GPG_PASSPHRASE }}" | gpg --pinentry-mode=loopback --passphrase-fd 0 --import private.key
           echo "${{ secrets.GPG_PASSPHRASE }}" | gpg --pinentry-mode=loopback --passphrase-fd 0 --detach-sign "${PROJECT_NAME}-${VERSION}.deb"
+          rm -f private.key
 
       - name: Upload release
         if: ${{ !contains(github.ref, '-') }}
-        uses: svenstaro/upload-release-action@b98a3b12e86552593f3e4e577ca8a62aa2f3f22b # 2.11.4
+        uses: svenstaro/upload-release-action@29e53e917877a24fad85510ded594ab3c9ca12de # 2.11.5
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: ${{ env.PROJECT_NAME }}-${{ needs.generate-changelog.outputs.version }}.deb*
@@ -337,7 +348,7 @@ jobs:
 
       - name: Upload pre-release
         if: ${{ contains(github.ref, '-') }}
-        uses: svenstaro/upload-release-action@b98a3b12e86552593f3e4e577ca8a62aa2f3f22b # 2.11.4
+        uses: svenstaro/upload-release-action@29e53e917877a24fad85510ded594ab3c9ca12de # 2.11.5
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: ${{ env.PROJECT_NAME }}-${{ needs.generate-changelog.outputs.version }}.deb*
@@ -352,6 +363,9 @@ jobs:
     if: vars.RPM_ENABLED == 'true'
     needs: [generate-changelog, publish-binaries]
     runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -382,10 +396,11 @@ jobs:
           echo "${{ secrets.GPG_RELEASE_KEY }}" | base64 --decode > private.key
           echo "${{ secrets.GPG_PASSPHRASE }}" | gpg --pinentry-mode=loopback --passphrase-fd 0 --import private.key
           echo "${{ secrets.GPG_PASSPHRASE }}" | gpg --pinentry-mode=loopback --passphrase-fd 0 --detach-sign "${PROJECT_NAME}-${VERSION}.x86_64.rpm"
+          rm -f private.key
 
       - name: Upload release
         if: ${{ !contains(github.ref, '-') }}
-        uses: svenstaro/upload-release-action@b98a3b12e86552593f3e4e577ca8a62aa2f3f22b # 2.11.4
+        uses: svenstaro/upload-release-action@29e53e917877a24fad85510ded594ab3c9ca12de # 2.11.5
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: ${{ env.PROJECT_NAME }}-${{ needs.generate-changelog.outputs.version }}.x86_64.rpm*
@@ -397,7 +412,7 @@ jobs:
 
       - name: Upload pre-release
         if: ${{ contains(github.ref, '-') }}
-        uses: svenstaro/upload-release-action@b98a3b12e86552593f3e4e577ca8a62aa2f3f22b # 2.11.4
+        uses: svenstaro/upload-release-action@29e53e917877a24fad85510ded594ab3c9ca12de # 2.11.5
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: ${{ env.PROJECT_NAME }}-${{ needs.generate-changelog.outputs.version }}.x86_64.rpm*
@@ -412,6 +427,7 @@ jobs:
     if: ${{ !contains(github.ref, '-') && vars.NPM_ENABLED == 'true' }}
     needs: [generate-changelog, publish-binaries]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       id-token: write # OIDC for npm trusted publishing
@@ -422,7 +438,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Setup Node
-        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version: 20
           registry-url: "https://registry.npmjs.org"

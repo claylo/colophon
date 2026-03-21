@@ -9,8 +9,8 @@
     "astro": "astro"
   },
   "dependencies": {
-    "@astrojs/starlight": "^0.37.6",
-    "astro": "^5.18.0",
+    "@astrojs/starlight": "^0.38.2",
+    "astro": "^6.0.8",
     "sharp": "^0.34.5",
     "rehype-github-emoji": "^1.0.0",
     "unist-util-visit": "^5.1.0"

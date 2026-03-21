@@ -1,5 +1,5 @@
 # Changes here will be overwritten by Copier
-_commit: v1.0.0-beta.7
+_commit: v1.0.0
 _src_path: gh:claylo/claylo-rs
 categories:
 - command-line-utilities
@@ -11,8 +11,6 @@ has_agents_md: true
 has_attestations: true
 has_benchmarks: false
 has_claude: true
-has_claude_commands: false
-has_claude_skills: false
 has_cli: true
 has_coda: true
 has_community_files: false
@@ -22,7 +20,7 @@ has_editorconfig: false
 has_env_files: false
 has_gitattributes: true
 has_github: true
-has_indicatif: false
+has_indicatif: true
 has_inquire: false
 has_issue_templates: true
 has_jsonl_logging: true
@@ -42,11 +40,12 @@ license:
 - Apache-2.0
 - MIT
 lint_level: strict
-msrv: 1.88.0
+msrv: 1.89.0
 owner: claylo
 pinned_dev_toolchain: 1.94.0
 preset: standard
-project_description: Generate back-of-book indexes and glossaries from Markdown or Typst.
+project_description: Generate back-of-book indexes and glossaries from Markdown or
+    Typst.
 project_name: colophon
 site_deploy: github_pages
 site_package_manager: npm
