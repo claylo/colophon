@@ -203,6 +203,10 @@ validate_crate_name() {
 # ============================================================================
 
 prompt_crate_type() {
+    if [[ ! -t 0 ]]; then
+        echo "Error: crate type is required in non-interactive mode (use: lib, bin, or internal)" >&2
+        exit 1
+    fi
     echo ""
     echo -e "${BOLD}Crate type:${NC}"
     echo "  1) lib       - Reusable library"
@@ -219,6 +223,10 @@ prompt_crate_type() {
 }
 
 prompt_crate_name() {
+    if [[ ! -t 0 ]]; then
+        echo "Error: crate name is required in non-interactive mode" >&2
+        exit 1
+    fi
     while true; do
         echo ""
         read -rp "Crate name (kebab-case): " CRATE_NAME
@@ -232,6 +240,15 @@ prompt_crate_name() {
 }
 
 prompt_description() {
+    if [[ ! -t 0 ]]; then
+        # Default based on type in non-interactive mode
+        case "$CRATE_TYPE" in
+            lib)      CRATE_DESC="Library crate" ;;
+            bin)      CRATE_DESC="Binary crate" ;;
+            internal) CRATE_DESC="Internal support crate" ;;
+        esac
+        return 0
+    fi
     echo ""
     read -rp "Brief description: " CRATE_DESC
     if [[ -z "$CRATE_DESC" ]]; then
@@ -246,6 +263,8 @@ prompt_description() {
 
 prompt_derive() {
     if [[ "$CRATE_TYPE" == "internal" ]] && [[ "$PROC_MACRO" == false ]]; then
+        # Non-interactive: default to no proc-macro
+        [[ ! -t 0 ]] && return 0
         echo ""
         read -rp "Set up as proc-macro crate? [y/N]: " yn
         case "$yn" in

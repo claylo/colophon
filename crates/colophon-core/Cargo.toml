@@ -29,11 +29,15 @@ exclude = [
 
 [dependencies]
 camino = { version = "1.2", features = ["serde1"] }
-directories = "6.0"
 figment = { version = "0.10", features = ["toml", "yaml", "json"] }
 serde = { version = "1.0", features = ["derive"] }
+directories = "6.0"
 thiserror = "2.0"
 tracing = "0.1"
+anyhow = "1.0"
+serde_json = "1.0"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
 
 # Markdown parsing
 pulldown-cmark = "0.13"
@@ -44,9 +48,6 @@ stop-words = { version = "0.10", features = ["iso", "nltk"] }
 
 # Regex for exclude_terms pattern matching
 regex = "1"
-
-# JSON for Claude CLI response parsing
-serde_json = "1.0"
 
 # YAML serialization for candidates/terms output
 serde_yaml = "0.9"
@@ -62,7 +63,7 @@ tempfile = "3.26"
 ah-ah-ah = "0.1.0"
 
 [dev-dependencies]
-tempfile = "3.26"
+tempfile = "3.27"
 
 [lints]
 workspace = true

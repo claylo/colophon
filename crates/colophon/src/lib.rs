@@ -46,16 +46,17 @@ impl ColorChoice {
 
 const ENV_HELP: &str = "\
 ENVIRONMENT VARIABLES:
-    RUST_LOG                Log filter (e.g., debug, colophon=trace)
-    COLOPHON_LOG_PATH     Log file path (rotated daily)
-    COLOPHON_LOG_DIR      Log directory
+    RUST_LOG             Log filter (e.g., debug, colophon=trace)
+    COLOPHON_LOG_PATH    Log file path (rotated daily)
+    COLOPHON_LOG_DIR     Log directory
 ";
+
 /// Command-line interface definition for colophon.
 #[derive(Parser)]
 #[command(name = "colophon")]
 #[command(about = "Generate book indexes and glossaries from Markdown or Typst.", long_about = None)]
 #[command(version, arg_required_else_help = true)]
-#[command(after_long_help = ENV_HELP)]
+#[command(after_help = ENV_HELP)]
 pub struct Cli {
     /// The subcommand to execute.
     #[command(subcommand)]
