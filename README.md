@@ -51,7 +51,7 @@ cargo install colophon
 ### Homebrew (macOS and Linux)
 
 ```bash
-brew install claylo/brew/colophon
+brew install claylo/tap/colophon
 ```
 
 ### Pre-built Binaries

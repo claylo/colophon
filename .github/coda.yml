@@ -11,7 +11,7 @@ allow_rebase_merge: true
 # Features
 enable_discussions: false
 enable_projects: false
-enable_wiki: true
+enable_wiki: false
 
 # Security
 enable_secret_scanning: true
@@ -26,4 +26,6 @@ secrets_app: actions
 variables:
   CRATES_IO_ENABLED: true
   HOMEBREW_ENABLED: true
-  HOMEBREW_TAP: "claylo/homebrew-brew"
+  HOMEBREW_TAP: "claylo/homebrew-tap"
+  GPG_SIGNING_ENABLED: true
+  NPM_ENABLED: true
