@@ -1,0 +1,98 @@
+audit_date: 2026-03-21
+scope: current-repo-review
+commit: 8a027bfb55da46d8cc0ee150edc01497b511c63b
+entry_points:
+  - path: crates/colophon/src/main.rs
+    kind: cli-main
+  - path: crates/colophon/src/commands/curate.rs
+    kind: cli-command
+  - path: crates/colophon/src/commands/render.rs
+    kind: cli-command
+  - path: crates/colophon-core/src/curate/mod.rs
+    kind: library-pipeline
+  - path: crates/colophon-core/src/render/mod.rs
+    kind: library-pipeline
+  - path: crates/colophon-core/src/validate.rs
+    kind: library-validation
+files:
+  - path: crates/colophon-core/src/curate/mod.rs
+    lines: 640
+    last_commit: 8a027bfb55da46d8cc0ee150edc01497b511c63b
+    last_commit_date: 2026-03-21T00:42:04-04:00
+  - path: crates/colophon-core/src/render/mod.rs
+    lines: 642
+    last_commit: 60bf2994b756b17fa7dbc3d0b970c1e283c4e404
+    last_commit_date: 2026-03-21T00:34:34-04:00
+  - path: crates/colophon-core/src/typst_prose.rs
+    lines: 240
+    last_commit: 60bf2994b756b17fa7dbc3d0b970c1e283c4e404
+    last_commit_date: 2026-03-21T00:34:34-04:00
+  - path: crates/colophon-core/src/validate.rs
+    lines: 441
+    last_commit: 60bf2994b756b17fa7dbc3d0b970c1e283c4e404
+    last_commit_date: 2026-03-21T00:34:34-04:00
+  - path: crates/colophon/src/commands/curate.rs
+    lines: 506
+    last_commit: 60bf2994b756b17fa7dbc3d0b970c1e283c4e404
+    last_commit_date: 2026-03-21T00:34:34-04:00
+  - path: crates/colophon/src/main.rs
+    lines: 82
+    last_commit: 40ea5ff635c79fbafa9bb21d6cfdc1852d7ce7b4
+    last_commit_date: 2026-03-20T18:51:24-04:00
+dependency_graph:
+  - from: crates/colophon/src/main.rs
+    to:
+      - crates/colophon/src/commands/curate.rs
+      - crates/colophon/src/commands/render.rs
+      - crates/colophon-core/src/config.rs
+      - crates/colophon-core/src/observability.rs
+  - from: crates/colophon/src/commands/curate.rs
+    to:
+      - crates/colophon-core/src/curate/mod.rs
+      - crates/colophon-core/src/validate.rs
+  - from: crates/colophon/src/commands/render.rs
+    to:
+      - crates/colophon-core/src/render/mod.rs
+  - from: crates/colophon-core/src/validate.rs
+    to:
+      - crates/colophon-core/src/typst_prose.rs
+  - from: crates/colophon-core/src/render/mod.rs
+    to:
+      - crates/colophon-core/src/render/typst.rs
+      - crates/colophon-core/src/curate/terms.rs
+  - from: crates/colophon-core/src/curate/mod.rs
+    to:
+      - crates/colophon-core/src/curate/claude.rs
+      - crates/colophon-core/src/curate/incremental.rs
+      - crates/colophon-core/src/curate/terms.rs
+dependency_manifest:
+  crate: colophon-core
+  notable_external_deps:
+    - camino 1.2
+    - indicatif 0.18.4
+    - pulldown-cmark 0.13
+    - serde_yaml 0.9
+    - typst-syntax 0.14.0
+    - walkdir 2
+  cli_deps:
+    - clap 4.6
+    - tabled 0.20.0
+    - owo-colors 4.3
+git_churn:
+  hotspot_paths:
+    - crates/colophon-core/src/curate/mod.rs
+    - crates/colophon-core/src/render/mod.rs
+    - crates/colophon/src/commands/curate.rs
+  recent_authors:
+    - Clay Loveless
+trust_boundaries:
+  - boundary: filesystem
+    notes: user-provided source trees and generated output files
+  - boundary: external-llm-cli
+    notes: Claude CLI output is post-processed into curated terms
+  - boundary: typst-source-parsing
+    notes: byte offsets derived from AST-safe prose ranges are later used to edit source text
+validation:
+  checks_run:
+    - cargo nextest run --workspace
+  result: pass

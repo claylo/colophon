@@ -112,19 +112,27 @@ pub fn find_term_offset_in_prose(
             .any(|&(rs, re)| abs_pos >= rs && abs_end <= re);
 
         if in_prose {
-            // Skip if next char is '.' followed by alpha — inserting a marker
-            // here would create a Typst field access on the marker's return value.
-            // e.g., "plugins.gradle.org" → "plugins#index[plugins].gradle.org" is broken.
-            let next_is_field_access = source.as_bytes().get(abs_end) == Some(&b'.')
-                && source
-                    .as_bytes()
-                    .get(abs_end + 1)
-                    .is_some_and(|b| b.is_ascii_alphabetic());
-            if !next_is_field_access {
-                return Some(abs_end);
+            // Guard: offset from lowered buffer may not be valid in the original
+            // source when Unicode case folding changes byte lengths.
+            if abs_end <= source.len() && source.is_char_boundary(abs_end) {
+                // Skip if next char is '.' followed by alpha — inserting a marker
+                // here would create a Typst field access on the marker's return value.
+                // e.g., "plugins.gradle.org" → "plugins#index[plugins].gradle.org" is broken.
+                let next_is_field_access = source.as_bytes().get(abs_end) == Some(&b'.')
+                    && source
+                        .as_bytes()
+                        .get(abs_end + 1)
+                        .is_some_and(|b| b.is_ascii_alphabetic());
+                if !next_is_field_access {
+                    return Some(abs_end);
+                }
             }
         }
+        // Advance start to next char boundary in the lowered buffer.
         start = abs_pos + 1;
+        while start < lower_source.len() && !lower_source.is_char_boundary(start) {
+            start += 1;
+        }
     }
     None
 }
