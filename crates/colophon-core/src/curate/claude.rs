@@ -40,9 +40,11 @@ Your job:
 
 6. **see_also**: link related terms the reader might also want. Only use terms that exist in your output.
 
-7. **main_files**: for each term, identify which source files contain substantive discussion (not just a passing mention). These become bold page numbers in the printed index.
+7. **main_files**: for each term, identify which source files contain substantive discussion (not just a passing mention). These become bold page numbers in the printed index. Only list files where the term or one of its aliases appears verbatim in the prose.
 
-8. **Suggest** important terms the extraction missed, if any are obvious from the file names and term context. Be comprehensive — suggest every term a reader might look up that isn't already in the candidate list."#;
+8. **Aliases must cover source text variants.** If a candidate's context snippet shows the source uses a slightly different form than the canonical term (e.g., source says "MCP tool search" but the candidate extracted "MCP tools"), include the source form as an alias. Post-processing uses aliases to locate terms in source files — any form that appears in the source text must be findable.
+
+9. **Suggest** important terms the extraction missed, if any are obvious from the file names and term context. Be comprehensive — suggest every term a reader might look up that isn't already in the candidate list."#;
 
 /// Input format description appended to system prompt for compact mode.
 const INPUT_FORMAT_COMPACT: &str = "\n\nInput format: each line is `term | score | file1, file2, ...`\nScore range is 0.0-1.0 (higher = more relevant). Files are where the term was found.";
