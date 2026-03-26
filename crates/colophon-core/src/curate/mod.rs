@@ -154,7 +154,6 @@ pub fn estimate_cost_incremental(
 pub fn run_incremental(
     existing: &CuratedTermsFile,
     candidates: &CandidatesFile,
-    _candidates_yaml: &str,
     config: &CurateConfig,
     extra_args: &[String],
     progress: &ProgressBar,

@@ -130,7 +130,6 @@ pub fn cmd_curate(mut args: CurateArgs, json: bool, config: &Config) -> anyhow::
             json,
             &curate_config,
             candidates,
-            &candidates_yaml,
             &terms_path,
             &config.source.extensions,
         );
@@ -311,7 +310,6 @@ fn cmd_curate_incremental(
     json: bool,
     config: &CurateConfig,
     candidates: CandidatesFile,
-    candidates_yaml: &str,
     terms_path: &Path,
     source_extensions: &[String],
 ) -> anyhow::Result<()> {
@@ -422,15 +420,8 @@ fn cmd_curate_incremental(
     };
 
     let start = Instant::now();
-    let result = curate::run_incremental(
-        &existing,
-        &candidates,
-        candidates_yaml,
-        config,
-        &args.claude_args,
-        &pb,
-    )
-    .context("incremental curation failed")?;
+    let result = curate::run_incremental(&existing, &candidates, config, &args.claude_args, &pb)
+        .context("incremental curation failed")?;
     let elapsed = start.elapsed();
 
     // Write output.
