@@ -199,6 +199,7 @@ pub fn cmd_curate(mut args: CurateArgs, json: bool, config: &Config) -> anyhow::
         &candidates,
         &candidates_yaml,
         &curate_config,
+        &config.extract.known_terms,
         &args.claude_args,
         &pb,
     )
