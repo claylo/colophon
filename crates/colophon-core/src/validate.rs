@@ -17,6 +17,17 @@ pub struct AliasSuggestion {
     pub suggested_alias: String,
 }
 
+/// An unresolved location where the heuristic could not suggest an alias.
+#[derive(Debug, Clone)]
+pub struct UnresolvedDetail {
+    /// Canonical term that can't be found.
+    pub term: String,
+    /// Source file where the term was expected.
+    pub file: String,
+    /// Whether the source file itself is missing.
+    pub file_missing: bool,
+}
+
 /// Summary of a validation pass.
 #[derive(Debug, Default)]
 pub struct ValidationReport {
@@ -26,6 +37,8 @@ pub struct ValidationReport {
     pub unresolved: usize,
     /// Suggested aliases for unresolved locations.
     pub suggestions: Vec<AliasSuggestion>,
+    /// Unresolved locations where no alias could be suggested.
+    pub unresolved_no_suggestion: Vec<UnresolvedDetail>,
 }
 
 /// File content cache entry.
@@ -68,8 +81,13 @@ pub fn validate_locations(
                 .or_insert_with(|| load_file(source_dir, &loc.file));
 
             let Some(entry) = entry else {
-                // File doesn't exist — unresolved, but no suggestion possible.
+                // File doesn't exist — unresolved, no suggestion possible.
                 report.unresolved += 1;
+                report.unresolved_no_suggestion.push(UnresolvedDetail {
+                    term: curated.term.clone(),
+                    file: loc.file.clone(),
+                    file_missing: true,
+                });
                 continue;
             };
 
@@ -99,6 +117,12 @@ pub fn validate_locations(
                     term: curated.term.clone(),
                     file: loc.file.clone(),
                     suggested_alias: suggested,
+                });
+            } else {
+                report.unresolved_no_suggestion.push(UnresolvedDetail {
+                    term: curated.term.clone(),
+                    file: loc.file.clone(),
+                    file_missing: false,
                 });
             }
         }
@@ -268,6 +292,9 @@ mod tests {
         let report = validate_locations(&tf, &tf.source_dir, &[]);
         assert_eq!(report.unresolved, 1);
         assert!(report.suggestions.is_empty());
+        assert_eq!(report.unresolved_no_suggestion.len(), 1);
+        assert_eq!(report.unresolved_no_suggestion[0].term, "Zyxelfrob");
+        assert!(!report.unresolved_no_suggestion[0].file_missing);
     }
 
     #[test]
@@ -333,6 +360,8 @@ mod tests {
         let report = validate_locations(&tf, &tf.source_dir, &[]);
         assert_eq!(report.unresolved, 1);
         assert!(report.suggestions.is_empty());
+        assert_eq!(report.unresolved_no_suggestion.len(), 1);
+        assert!(report.unresolved_no_suggestion[0].file_missing);
     }
 
     // ── Task 3 tests ────────────────────────────────────────────────

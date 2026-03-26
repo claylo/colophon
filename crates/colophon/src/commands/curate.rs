@@ -57,15 +57,27 @@ fn display_validation(
 ) {
     let report =
         colophon_core::validate::validate_locations(terms, &terms.source_dir, source_extensions);
-    if !report.suggestions.is_empty() {
+    if report.unresolved > 0 {
         eprintln!();
         eprintln!(
             "Validation: {} resolved, {} unresolved",
             report.resolved, report.unresolved
         );
-        eprintln!("Suggested aliases for unresolved locations:");
-        for s in &report.suggestions {
-            eprintln!("  {} -> add alias \"{}\"", s.term, s.suggested_alias);
+        if !report.suggestions.is_empty() {
+            eprintln!("Suggested aliases for unresolved locations:");
+            for s in &report.suggestions {
+                eprintln!("  {} -> add alias \"{}\"", s.term, s.suggested_alias);
+            }
+        }
+        for detail in &report.unresolved_no_suggestion {
+            if detail.file_missing {
+                eprintln!("  {} in {} (file not found)", detail.term, detail.file);
+            } else {
+                eprintln!(
+                    "  {} in {} (not found, no suggestion)",
+                    detail.term, detail.file
+                );
+            }
         }
     }
 }

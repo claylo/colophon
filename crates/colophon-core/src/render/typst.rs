@@ -37,7 +37,7 @@ impl Renderer for TypstRenderer {
         // Insert markers at descending byte offsets.
         for ann in annotations {
             let marker = self.format_marker(&ann.term, &ann.parent_chain, ann.main);
-            if ann.byte_offset <= result.len() {
+            if ann.byte_offset <= result.len() && result.is_char_boundary(ann.byte_offset) {
                 result.insert_str(ann.byte_offset, &marker);
             }
         }

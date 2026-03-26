@@ -348,7 +348,7 @@ fn post_process(
                             let is_main = ct
                                 .main_files
                                 .iter()
-                                .any(|mf| loc.file.contains(mf.as_str()));
+                                .any(|mf| std::path::Path::new(&loc.file).ends_with(mf.as_str()));
                             locations.push(TermLocation {
                                 file: loc.file.clone(),
                                 main: is_main,
@@ -561,6 +561,73 @@ mod tests {
 
         let api_loc = oauth.locations.iter().find(|l| l.file == "api.md").unwrap();
         assert!(!api_loc.main, "api.md should not be main for OAuth");
+    }
+
+    #[test]
+    fn post_process_main_files_rejects_substring_overlap() {
+        // Regression: "auth.md" in main_files must NOT match "old-auth.md"
+        let candidates = CandidatesFile {
+            version: 1,
+            generated: "2026-03-25T00:00:00Z".to_string(),
+            source_dir: "src/".to_string(),
+            document_count: 3,
+            candidates: vec![Candidate {
+                term: "OAuth".to_string(),
+                score: 0.95,
+                locations: vec![
+                    CandidateLocation {
+                        file: "auth.md".to_string(),
+                        context: "OAuth is used here".to_string(),
+                    },
+                    CandidateLocation {
+                        file: "old-auth.md".to_string(),
+                        context: "Legacy OAuth reference".to_string(),
+                    },
+                    CandidateLocation {
+                        file: "appendix/auth.md.bak".to_string(),
+                        context: "Backup mention".to_string(),
+                    },
+                ],
+            }],
+        };
+        let output = ClaudeOutput {
+            terms: vec![terms::ClaudeTerm {
+                term: "OAuth".to_string(),
+                definition: "Open authorization standard.".to_string(),
+                parent: None,
+                aliases: Vec::new(),
+                see_also: Vec::new(),
+                main_files: vec!["auth.md".to_string()],
+            }],
+            suggested: Vec::new(),
+        };
+
+        let terms = post_process(&output, &candidates, 200);
+        let oauth = terms.iter().find(|t| t.term == "OAuth").unwrap();
+
+        let auth = oauth
+            .locations
+            .iter()
+            .find(|l| l.file == "auth.md")
+            .unwrap();
+        assert!(auth.main, "auth.md should be main");
+
+        let old_auth = oauth
+            .locations
+            .iter()
+            .find(|l| l.file == "old-auth.md")
+            .unwrap();
+        assert!(
+            !old_auth.main,
+            "old-auth.md must NOT be main (substring overlap)"
+        );
+
+        let bak = oauth
+            .locations
+            .iter()
+            .find(|l| l.file == "appendix/auth.md.bak")
+            .unwrap();
+        assert!(!bak.main, "auth.md.bak must NOT be main");
     }
 
     #[test]

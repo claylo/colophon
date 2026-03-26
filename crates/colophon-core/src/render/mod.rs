@@ -106,7 +106,16 @@ pub(crate) fn build_parent_chain(term_name: &str, terms: &[CuratedTerm]) -> Vec<
 pub(crate) fn find_term_offset(text: &str, term: &str) -> Option<usize> {
     let lower_text = text.to_lowercase();
     let lower_term = term.to_lowercase();
-    lower_text.find(&lower_term).map(|pos| pos + term.len())
+    lower_text.find(&lower_term).and_then(|pos| {
+        let offset = pos + term.len();
+        // Guard: offset from lowered buffer may not be a char boundary in the
+        // original text when Unicode case folding changes byte lengths.
+        if offset <= text.len() && text.is_char_boundary(offset) {
+            Some(offset)
+        } else {
+            None
+        }
+    })
 }
 
 /// Render format selection.
