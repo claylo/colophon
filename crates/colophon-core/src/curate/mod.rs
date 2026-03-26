@@ -63,6 +63,7 @@ pub fn run(
     candidates: &CandidatesFile,
     candidates_yaml: &str,
     config: &CurateConfig,
+    known_terms: &[crate::config::KnownTerm],
     extra_args: &[String],
     progress: &ProgressBar,
 ) -> CurateResult<CurationOutput> {
@@ -83,7 +84,12 @@ pub fn run(
     let invoke_result = claude::invoke(config, candidates, candidates_yaml, extra_args, progress)?;
 
     // Post-process into the final term database.
-    let terms = post_process(&invoke_result.output, candidates, config.max_terms);
+    let terms = post_process(
+        &invoke_result.output,
+        candidates,
+        config.max_terms,
+        known_terms,
+    );
 
     tracing::debug!(terms = terms.len(), "curation pipeline complete");
 
@@ -321,6 +327,7 @@ fn post_process(
     output: &ClaudeOutput,
     candidates: &CandidatesFile,
     max_terms: usize,
+    known_terms: &[crate::config::KnownTerm],
 ) -> Vec<CuratedTerm> {
     // Build a lookup: lowercase term → candidate locations.
     let candidate_map: HashMap<String, &crate::extract::candidates::Candidate> = candidates
@@ -372,11 +379,60 @@ fn post_process(
                 );
             }
 
+            // Auto-alias: ensure render can find terms in source files.
+            //
+            // Two cases where the curated term won't match source text:
+            // 1. Claude renames a candidate (e.g., "Bedrock" → "Amazon Bedrock")
+            // 2. Extract consolidated known_terms variants that appear in source
+            //    (e.g., config says Amazon Bedrock has variant "Bedrock")
+            let mut aliases = ct.aliases.clone();
+            let lower_curated = ct.term.to_lowercase();
+
+            // Case 1: candidate name differs from curated name.
+            for key in &lookup_keys {
+                if let Some(candidate) = candidate_map.get(key) {
+                    let lower_candidate = candidate.term.to_lowercase();
+                    if lower_candidate != lower_curated
+                        && !aliases.iter().any(|a| a.to_lowercase() == lower_candidate)
+                    {
+                        tracing::debug!(
+                            term = %ct.term,
+                            candidate = %candidate.term,
+                            "auto-adding candidate as alias (renamed during curation)"
+                        );
+                        aliases.push(candidate.term.clone());
+                    }
+                }
+            }
+
+            // Case 2: known_terms variants absorbed during extract.
+            // Match by curated term name OR by any alias (handles Claude renames).
+            let alias_lower: Vec<String> = aliases.iter().map(|a| a.to_lowercase()).collect();
+            for known in known_terms {
+                let known_lower = known.term.to_lowercase();
+                if known_lower == lower_curated || alias_lower.contains(&known_lower) {
+                    for variant in &known.variants {
+                        if !aliases
+                            .iter()
+                            .any(|a| a.to_lowercase() == variant.to_lowercase())
+                        {
+                            tracing::debug!(
+                                term = %ct.term,
+                                variant = %variant,
+                                known_term = %known.term,
+                                "auto-adding known_terms variant as alias"
+                            );
+                            aliases.push(variant.clone());
+                        }
+                    }
+                }
+            }
+
             CuratedTerm {
                 term: ct.term.clone(),
                 definition: ct.definition.clone(),
                 parent: ct.parent.clone(),
-                aliases: ct.aliases.clone(),
+                aliases,
                 see_also: ct.see_also.clone(),
                 children: Vec::new(),
                 locations,
@@ -531,7 +587,7 @@ mod tests {
     fn post_process_maps_locations() {
         let candidates = sample_candidates();
         let output = sample_claude_output();
-        let terms = post_process(&output, &candidates, 200);
+        let terms = post_process(&output, &candidates, 200, &[]);
 
         let oauth = terms.iter().find(|t| t.term == "OAuth").unwrap();
         // OAuth + alias "OAuth 2.0" should merge locations from both candidates.
@@ -549,7 +605,7 @@ mod tests {
     fn post_process_flags_main_files() {
         let candidates = sample_candidates();
         let output = sample_claude_output();
-        let terms = post_process(&output, &candidates, 200);
+        let terms = post_process(&output, &candidates, 200, &[]);
 
         let oauth = terms.iter().find(|t| t.term == "OAuth").unwrap();
         let auth_loc = oauth
@@ -602,7 +658,7 @@ mod tests {
             suggested: Vec::new(),
         };
 
-        let terms = post_process(&output, &candidates, 200);
+        let terms = post_process(&output, &candidates, 200, &[]);
         let oauth = terms.iter().find(|t| t.term == "OAuth").unwrap();
 
         let auth = oauth
@@ -631,10 +687,148 @@ mod tests {
     }
 
     #[test]
+    fn post_process_auto_aliases_known_term_variants() {
+        // Extract consolidates "Bedrock" into "Amazon Bedrock" via known_terms,
+        // but the variant forms must be preserved as aliases so render can find
+        // the term in source files that say "Bedrock".
+        let candidates = CandidatesFile {
+            version: 1,
+            generated: "2026-03-25T00:00:00Z".to_string(),
+            source_dir: "src/".to_string(),
+            document_count: 2,
+            candidates: vec![
+                // Extract already consolidated — candidate is the canonical form.
+                Candidate {
+                    term: "Amazon Bedrock".to_string(),
+                    score: 0.9,
+                    locations: vec![CandidateLocation {
+                        file: "infra.md".to_string(),
+                        context: "Bedrock powers our models".to_string(),
+                    }],
+                },
+                Candidate {
+                    term: "Google Chrome".to_string(),
+                    score: 0.85,
+                    locations: vec![CandidateLocation {
+                        file: "tools.md".to_string(),
+                        context: "Debug with Chrome".to_string(),
+                    }],
+                },
+            ],
+        };
+        let output = ClaudeOutput {
+            terms: vec![
+                terms::ClaudeTerm {
+                    term: "Amazon Bedrock".to_string(),
+                    definition: "AWS foundation model platform.".to_string(),
+                    parent: None,
+                    aliases: Vec::new(), // Claude didn't add any aliases
+                    see_also: Vec::new(),
+                    main_files: Vec::new(),
+                },
+                terms::ClaudeTerm {
+                    term: "Google Chrome".to_string(),
+                    definition: "Browser debugging support.".to_string(),
+                    parent: None,
+                    // Claude included "Chrome" — variant should not duplicate.
+                    aliases: vec!["Chrome".to_string()],
+                    see_also: Vec::new(),
+                    main_files: Vec::new(),
+                },
+            ],
+            suggested: Vec::new(),
+        };
+
+        let known = vec![
+            crate::config::KnownTerm {
+                term: "Amazon Bedrock".to_string(),
+                variants: vec!["Bedrock".to_string(), "AWS Bedrock".to_string()],
+            },
+            crate::config::KnownTerm {
+                term: "Google Chrome".to_string(),
+                variants: vec!["Chrome".to_string()],
+            },
+        ];
+
+        let terms = post_process(&output, &candidates, 200, &known);
+
+        let bedrock = terms.iter().find(|t| t.term == "Amazon Bedrock").unwrap();
+        assert!(
+            bedrock.aliases.contains(&"Bedrock".to_string()),
+            "known_terms variant 'Bedrock' should be auto-added; got {:?}",
+            bedrock.aliases
+        );
+        assert!(
+            bedrock.aliases.contains(&"AWS Bedrock".to_string()),
+            "known_terms variant 'AWS Bedrock' should be auto-added; got {:?}",
+            bedrock.aliases
+        );
+
+        let chrome = terms.iter().find(|t| t.term == "Google Chrome").unwrap();
+        let chrome_count = chrome
+            .aliases
+            .iter()
+            .filter(|a| a.to_lowercase() == "chrome")
+            .count();
+        assert_eq!(
+            chrome_count, 1,
+            "Chrome should appear exactly once (no duplicate); got {:?}",
+            chrome.aliases
+        );
+    }
+
+    #[test]
+    fn post_process_auto_aliases_known_terms_via_alias_match() {
+        // Claude renames "Google Chrome" to "Chrome integration" but keeps
+        // "Google Chrome" as an alias. The known_terms variant "Chrome" should
+        // still be auto-added because the alias matches the known_term name.
+        let candidates = CandidatesFile {
+            version: 1,
+            generated: "2026-03-25T00:00:00Z".to_string(),
+            source_dir: "src/".to_string(),
+            document_count: 1,
+            candidates: vec![Candidate {
+                term: "Google Chrome".to_string(),
+                score: 0.9,
+                locations: vec![CandidateLocation {
+                    file: "tools.md".to_string(),
+                    context: "Debug with Chrome".to_string(),
+                }],
+            }],
+        };
+        let output = ClaudeOutput {
+            terms: vec![terms::ClaudeTerm {
+                term: "Chrome integration".to_string(),
+                definition: "Browser debugging.".to_string(),
+                parent: None,
+                aliases: vec!["Google Chrome".to_string()],
+                see_also: Vec::new(),
+                main_files: Vec::new(),
+            }],
+            suggested: Vec::new(),
+        };
+        let known = vec![crate::config::KnownTerm {
+            term: "Google Chrome".to_string(),
+            variants: vec!["Chrome".to_string()],
+        }];
+
+        let terms = post_process(&output, &candidates, 200, &known);
+        let chrome = terms
+            .iter()
+            .find(|t| t.term == "Chrome integration")
+            .unwrap();
+        assert!(
+            chrome.aliases.contains(&"Chrome".to_string()),
+            "known_terms variant 'Chrome' should be added via alias match; got {:?}",
+            chrome.aliases
+        );
+    }
+
+    #[test]
     fn post_process_inverts_hierarchy() {
         let candidates = sample_candidates();
         let output = sample_claude_output();
-        let terms = post_process(&output, &candidates, 200);
+        let terms = post_process(&output, &candidates, 200, &[]);
 
         let auth = terms.iter().find(|t| t.term == "authentication").unwrap();
         assert!(
@@ -651,7 +845,7 @@ mod tests {
     fn post_process_includes_suggested() {
         let candidates = sample_candidates();
         let output = sample_claude_output();
-        let terms = post_process(&output, &candidates, 200);
+        let terms = post_process(&output, &candidates, 200, &[]);
 
         let bearer = terms.iter().find(|t| t.term == "bearer token");
         assert!(bearer.is_some(), "suggested term should be in output");
@@ -667,7 +861,7 @@ mod tests {
     fn post_process_sorts_alphabetically() {
         let candidates = sample_candidates();
         let output = sample_claude_output();
-        let terms = post_process(&output, &candidates, 200);
+        let terms = post_process(&output, &candidates, 200, &[]);
 
         for window in terms.windows(2) {
             assert!(
@@ -683,7 +877,7 @@ mod tests {
     fn post_process_truncates_to_max() {
         let candidates = sample_candidates();
         let output = sample_claude_output();
-        let terms = post_process(&output, &candidates, 2);
+        let terms = post_process(&output, &candidates, 2, &[]);
         assert_eq!(terms.len(), 2, "should truncate to max_terms");
     }
 
@@ -691,7 +885,7 @@ mod tests {
     fn post_process_deduplicates_location_files() {
         let candidates = sample_candidates();
         let output = sample_claude_output();
-        let terms = post_process(&output, &candidates, 200);
+        let terms = post_process(&output, &candidates, 200, &[]);
 
         let oauth = terms.iter().find(|t| t.term == "OAuth").unwrap();
         let auth_count = oauth

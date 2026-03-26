@@ -29,3 +29,4 @@ variables:
   HOMEBREW_TAP: "claylo/homebrew-tap"
   GPG_SIGNING_ENABLED: true
   NPM_ENABLED: true
+  SBOM_ENABLED: true
