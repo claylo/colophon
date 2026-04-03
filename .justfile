@@ -69,10 +69,6 @@ bootstrap:
     echo "📖 Generating man pages..."
     cargo xtask man
     echo ""
-    # Install site dependencies
-    echo "📦 Installing site dependencies (npm)..."
-    (cd site && npm install)
-    echo ""
 
     # Configure repository settings via gh-coda
     if command -v gh &>/dev/null && gh extension list 2>/dev/null | grep -q coda; then
@@ -96,7 +92,7 @@ bootstrap:
     echo "  target/debug/colophon --help"
 
 fmt:
-  cargo fmt --all
+  cargo fmt --all -- --config-path .config/rustfmt.toml
 
 clippy:
   cargo +{{toolchain}} clippy --all-targets --all-features --message-format=short -- -D warnings
@@ -107,7 +103,7 @@ fix:
 
 # Check dependencies for security advisories and license compliance
 deny:
-  cargo deny check
+  cargo deny check --config .config/deny.toml
 
 test:
   cargo nextest run
@@ -120,7 +116,6 @@ doc-test:
 
 cov:
   @cargo llvm-cov clean --workspace
-
   cargo llvm-cov nextest --no-report
   @cargo llvm-cov report --html
   @cargo llvm-cov report --summary-only --json --output-path target/llvm-cov/summary.json
@@ -135,46 +130,9 @@ watch *args='':
 watch-clippy:
   cargo watch -x 'clippy --all-targets --all-features -- -D warnings'
 
-# Lint markdown files
-mdlint *files='':
-    #!/usr/bin/env bash
-    if command -v rumdl &>/dev/null; then
-        rumdl ${files:-.}
-    elif command -v markdownlint &>/dev/null; then
-        markdownlint ${files:-"**/*.md"}
-    else
-        echo "Install rumdl (cargo bininstall rumdl) or markdownlint (npm i -g markdownlint-cli)"
-        exit 1
-    fi
-
-# Fix markdown files
-mdfix *files='':
-    #!/usr/bin/env bash
-    if command -v rumdl &>/dev/null; then
-        rumdl --fix ${files:-.}
-    elif command -v markdownlint &>/dev/null; then
-        markdownlint --fix ${files:-"**/*.md"}
-    else
-        echo "Install rumdl (cargo bininstall rumdl) or markdownlint (npm i -g markdownlint-cli)"
-        exit 1
-    fi
 
 
-# Install site dependencies
-site-install:
-  cd site && npm install
 
-# Start site dev server
-site-dev:
-  cd site && npm run dev
-
-# Build site for production
-site-build:
-  cd site && npm run build
-
-# Preview production build
-site-preview:
-  cd site && npm run preview
 
 # Add a new crate to the workspace
 add-crate *ARGS:

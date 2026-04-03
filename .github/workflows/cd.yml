@@ -430,9 +430,10 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
-      id-token: write # OIDC for npm trusted publishing
+      id-token: write # OIDC for npm provenance (after initial publish)
     env:
       VERSION: ${{ needs.generate-changelog.outputs.version }}
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -442,9 +443,6 @@ jobs:
         with:
           node-version: 20
           registry-url: "https://registry.npmjs.org"
-
-      - name: Install npm with OIDC support
-        run: npm install -g npm@latest
 
       - name: Download release artifacts
         env:
@@ -556,9 +554,14 @@ EOF
 
             echo "Publishing $(basename "$pkg_dir")..."
             cd "$pkg_dir"
-            if ! npm publish --provenance --access public; then
-              echo "::error::Failed to publish $(basename "$pkg_dir")"
-              failures=$((failures + 1))
+            # Try with provenance (OIDC) first; fall back to token-only
+            # for initial publish where OIDC isn't available yet
+            if ! npm publish --provenance --access public 2>/dev/null; then
+              echo "Provenance publish failed, retrying without provenance..."
+              if ! npm publish --access public; then
+                echo "::error::Failed to publish $(basename "$pkg_dir")"
+                failures=$((failures + 1))
+              fi
             fi
             cd - > /dev/null
           done
@@ -570,5 +573,9 @@ EOF
       - name: Publish main package
         run: |
           cd "npm/${PROJECT_NAME}"
-          npm publish --provenance --access public
+          # Try with provenance (OIDC) first; fall back to token-only
+          if ! npm publish --provenance --access public 2>/dev/null; then
+            echo "Provenance publish failed, retrying without provenance..."
+            npm publish --access public
+          fi
 

@@ -14,9 +14,7 @@ exclude = [
     "/.repo.yml",
    "/.claude/",
     "/.github/",
-    "/AGENTS.md",
     "/.justfile",
-    "/.markdownlint.yaml",
     "/docs/",
     "/deny.toml",
 ]

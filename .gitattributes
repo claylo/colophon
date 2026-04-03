@@ -43,7 +43,5 @@ LICENSE* text eol=lf
 .repo.yml export-ignore
 .claude/ export-ignore
 .github/ export-ignore
-AGENTS.md export-ignore
-.markdownlint.yaml export-ignore
 .justfile export-ignore
 docs/ export-ignore
