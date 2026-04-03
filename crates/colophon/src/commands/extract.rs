@@ -37,6 +37,9 @@ fn human_size(bytes: u64) -> String {
 #[instrument(name = "cmd_extract", skip_all)]
 pub fn cmd_extract(args: ExtractArgs, json: bool, config: &Config) -> anyhow::Result<()> {
     debug!("executing extract command");
+    if !json {
+        super::banner();
+    }
 
     let mut source = config.source.clone();
     if let Some(dir) = args.dir {

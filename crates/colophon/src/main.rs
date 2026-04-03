@@ -2,14 +2,16 @@
 #![deny(unsafe_code)]
 
 use anyhow::Context;
-use clap::Parser;
+use clap::FromArgMatches;
 use colophon::{Cli, Commands, commands};
 use colophon_core::config::ConfigLoader;
 use tracing::debug;
 
 use colophon_core::observability;
 fn main() -> anyhow::Result<()> {
-    let cli = Cli::parse();
+    let cli = Cli::from_arg_matches(&colophon::command().get_matches())
+        .expect("clap mismatch between Cli derive and command()");
+
     cli.color.apply();
 
     if cli.version_only {

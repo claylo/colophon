@@ -97,6 +97,9 @@ fn human_size(bytes: u64) -> String {
 #[instrument(name = "cmd_curate", skip_all)]
 pub fn cmd_curate(mut args: CurateArgs, json: bool, config: &Config) -> anyhow::Result<()> {
     debug!("executing curate command");
+    if !json {
+        super::banner();
+    }
 
     let mut curate_config = config.curate.clone();
     if let Some(model) = args.model.take() {

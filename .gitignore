@@ -66,3 +66,5 @@ colophon-candidates.yaml
 test-output.jsonl
 out/
 scripts/claude-request
+dist/
+.claude/
