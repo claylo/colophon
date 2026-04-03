@@ -1,6 +1,7 @@
 # colophon Configuration (YAML format)
 #
 # Copy this file to one of the following locations:
+#   - .config/colophon.yaml (in your project directory)
 #   - .colophon.yaml (in your project directory)
 #   - colophon.yaml (in your project directory)
 #   - ~/.config/colophon/config.yaml (user-wide config)

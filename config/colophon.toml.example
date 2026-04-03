@@ -1,6 +1,7 @@
 # colophon Configuration (TOML format)
 #
 # Copy this file to one of the following locations:
+#   - .config/colophon.toml (in your project directory)
 #   - .colophon.toml (in your project directory)
 #   - colophon.toml (in your project directory)
 #   - ~/.config/colophon/config.toml (user-wide config)

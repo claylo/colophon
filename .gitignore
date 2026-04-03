@@ -35,8 +35,7 @@ target/
 **/*.rs.bk
 
 # Generated man pages and shell completions (keep .gitkeep)
-dist/share/man/man1/*.1
-dist/share/completions/*
+dist/
 !dist/share/**/.gitkeep
 
 # Benchmark results (keep .gitkeep)
