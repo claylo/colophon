@@ -44,6 +44,11 @@ impl ColorChoice {
     }
 }
 
+const BANNER: &str = "\
+┌─┐┌─┐┬  ┌─┐┌─┐┬ ┬┌─┐┌┐┌
+│  │ ││  │ │├─┘├─┤│ ││││
+└─┘└─┘┴─┘└─┘┴  ┴ ┴└─┘┘└┘";
+
 const ENV_HELP: &str = "\
 ENVIRONMENT VARIABLES:
     RUST_LOG             Log filter (e.g., debug, colophon=trace)
@@ -56,7 +61,9 @@ ENVIRONMENT VARIABLES:
 #[command(name = "colophon")]
 #[command(about = "Generate book indexes and glossaries from Markdown or Typst.", long_about = None)]
 #[command(version, arg_required_else_help = true)]
+#[command(before_help = BANNER)]
 #[command(after_help = ENV_HELP)]
+#[command(disable_help_flag = true)]
 pub struct Cli {
     /// The subcommand to execute.
     #[command(subcommand)]
@@ -106,7 +113,19 @@ pub enum Commands {
     Render(commands::render::RenderArgs),
 }
 
-/// Returns the clap command for documentation generation
+/// Returns the clap command for documentation generation.
+///
+/// Adds a custom `-h`/`--help` flag using `HelpShort` so both render
+/// the compact single-line format. This is done at the Command level
+/// (not as a struct field) because clap's derive treats `HelpShort`
+/// as a value-less exit action that conflicts with struct population.
 pub fn command() -> clap::Command {
-    Cli::command()
+    Cli::command().arg(
+        clap::Arg::new("help")
+            .short('h')
+            .long("help")
+            .help("Print help")
+            .global(true)
+            .action(clap::ArgAction::HelpShort),
+    )
 }
