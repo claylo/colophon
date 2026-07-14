@@ -200,3 +200,12 @@ curate:
 
   # Extra arguments can be passed through to the claude CLI at runtime:
   #   colophon curate -- --max-budget-usd 5.00
+
+# --- Render phase -----------------------------------------------------------
+render:
+  # in-dexter package version written into generated Typst imports:
+  #   #import "@preview/in-dexter:<version>": *
+  # Must match the version your Typst template pins (tuftelike pins this
+  # in its backmatter module). Bump here when the template bumps — no
+  # colophon release required.
+  in_dexter_version: "0.7.2"

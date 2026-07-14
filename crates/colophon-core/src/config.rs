@@ -221,6 +221,30 @@ impl Default for CurateConfig {
     }
 }
 
+/// Configuration for the render pipeline.
+///
+/// Note: distinct from [`crate::render::RenderConfig`], which carries the
+/// per-invocation run parameters; this struct is the config-file section.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct RenderConfig {
+    /// in-dexter package version written into generated imports
+    /// (`#import "@preview/in-dexter:<version>": *`).
+    ///
+    /// Must match the version the consuming Typst template pins (for
+    /// tuftelike: see its backmatter module) — bump here, no colophon
+    /// release required.
+    pub in_dexter_version: String,
+}
+
+impl Default for RenderConfig {
+    fn default() -> Self {
+        Self {
+            in_dexter_version: "0.7.2".to_string(),
+        }
+    }
+}
+
 /// The configuration for colophon.
 ///
 /// This struct is deserialized from config files found during discovery
@@ -238,6 +262,8 @@ pub struct Config {
     pub extract: ExtractConfig,
     /// Claude curation pipeline settings.
     pub curate: CurateConfig,
+    /// Render pipeline settings.
+    pub render: RenderConfig,
 }
 
 /// Log level configuration.
@@ -553,6 +579,16 @@ mod tests {
         let config = Config::default();
         assert_eq!(config.log_level, LogLevel::Info);
         assert!(config.log_dir.is_none());
+        assert_eq!(config.render.in_dexter_version, "0.7.2");
+    }
+
+    #[test]
+    fn test_render_in_dexter_version_from_yaml() {
+        let config: Config = serde_yaml::from_str("render:\n  in_dexter_version: \"0.8.0\"\n")
+            .expect("yaml render section should deserialize");
+        assert_eq!(config.render.in_dexter_version, "0.8.0");
+        // untouched sections keep defaults
+        assert_eq!(config.curate.model, "sonnet");
     }
 
     #[test]

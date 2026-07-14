@@ -97,6 +97,7 @@ pub fn cmd_render(args: RenderArgs, json: bool, config: &Config) -> anyhow::Resu
         main_only: args.main_only,
         glossary_spacing: args.glossary_spacing.as_deref(),
         format,
+        in_dexter_version: &config.render.in_dexter_version,
     };
     let result = render::run(&terms, render_config).context("render pipeline failed")?;
     let elapsed = start.elapsed();

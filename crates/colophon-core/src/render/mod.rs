@@ -140,13 +140,15 @@ pub struct RenderConfig<'a> {
     pub glossary_spacing: Option<&'a str>,
     /// Output format.
     pub format: RenderFormat,
+    /// in-dexter version for generated imports (config: `render.in_dexter_version`).
+    pub in_dexter_version: &'a str,
 }
 
 /// Run the render pipeline.
 pub fn run(terms: &CuratedTermsFile, config: RenderConfig<'_>) -> RenderResult<RenderOutput> {
     match config.format {
         RenderFormat::Typst => {
-            let renderer = typst::TypstRenderer;
+            let renderer = typst::TypstRenderer::new(config.in_dexter_version);
             run_with_renderer(terms, &config, &renderer)
         }
     }
@@ -427,7 +429,7 @@ mod tests {
             }],
         };
 
-        let renderer = super::typst::TypstRenderer;
+        let renderer = super::typst::TypstRenderer::default();
         let exts = vec!["typ".to_string()];
         let config = RenderConfig {
             source_dir: source_dir.to_str().unwrap(),
@@ -437,6 +439,7 @@ mod tests {
             main_only: false,
             glossary_spacing: None,
             format: RenderFormat::Typst,
+            in_dexter_version: super::typst::DEFAULT_IN_DEXTER_VERSION,
         };
         let result = run_with_renderer(&terms, &config, &renderer);
         assert!(result.is_ok(), "run should succeed: {result:?}");
@@ -483,7 +486,7 @@ mod tests {
             }],
         };
 
-        let renderer = super::typst::TypstRenderer;
+        let renderer = super::typst::TypstRenderer::default();
         let exts = vec!["typ".to_string()];
         let config = RenderConfig {
             source_dir: source_dir.to_str().unwrap(),
@@ -493,6 +496,7 @@ mod tests {
             main_only: false,
             glossary_spacing: None,
             format: RenderFormat::Typst,
+            in_dexter_version: super::typst::DEFAULT_IN_DEXTER_VERSION,
         };
         let result = run_with_renderer(&terms, &config, &renderer).unwrap();
         assert_eq!(result.markers_inserted, 1);
@@ -537,7 +541,7 @@ mod tests {
             }],
         };
 
-        let renderer = super::typst::TypstRenderer;
+        let renderer = super::typst::TypstRenderer::default();
         let exts = vec!["typ".to_string()];
         let config = RenderConfig {
             source_dir: source_dir.to_str().unwrap(),
@@ -547,6 +551,7 @@ mod tests {
             main_only: false,
             glossary_spacing: None,
             format: RenderFormat::Typst,
+            in_dexter_version: super::typst::DEFAULT_IN_DEXTER_VERSION,
         };
         let result = run_with_renderer(&terms, &config, &renderer).unwrap();
         assert_eq!(result.markers_inserted, 1);
@@ -584,7 +589,7 @@ mod tests {
             }],
         };
 
-        let renderer = super::typst::TypstRenderer;
+        let renderer = super::typst::TypstRenderer::default();
         let exts = vec!["typ".to_string()];
         let config = RenderConfig {
             source_dir: source_dir.to_str().unwrap(),
@@ -594,6 +599,7 @@ mod tests {
             main_only: false,
             glossary_spacing: None,
             format: RenderFormat::Typst,
+            in_dexter_version: super::typst::DEFAULT_IN_DEXTER_VERSION,
         };
         let result = run_with_renderer(&terms, &config, &renderer).unwrap();
         assert_eq!(result.markers_inserted, 0);
@@ -629,7 +635,7 @@ mod tests {
             }],
         };
 
-        let renderer = super::typst::TypstRenderer;
+        let renderer = super::typst::TypstRenderer::default();
         let exts = vec!["typ".to_string()];
         let config = RenderConfig {
             source_dir: source_dir.to_str().unwrap(),
@@ -639,6 +645,7 @@ mod tests {
             main_only: false,
             glossary_spacing: None,
             format: RenderFormat::Typst,
+            in_dexter_version: super::typst::DEFAULT_IN_DEXTER_VERSION,
         };
         let result = run_with_renderer(&terms, &config, &renderer).unwrap();
         assert_eq!(result.glossary_terms, 1);

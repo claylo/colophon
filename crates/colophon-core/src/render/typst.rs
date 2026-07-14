@@ -3,13 +3,39 @@
 use crate::curate::terms::CuratedTermsFile;
 use crate::render::{Annotation, Renderer};
 
-/// In-dexter import line prepended to annotated files.
-const IN_DEXTER_IMPORT: &str = "#import \"@preview/in-dexter:0.7.2\": *\n";
+/// Default in-dexter version for generated imports. Overridable via the
+/// `render.in_dexter_version` config value so tracking a template's pin
+/// doesn't require a colophon release.
+pub const DEFAULT_IN_DEXTER_VERSION: &str = "0.7.2";
 
 /// Typst renderer using in-dexter index markers.
-pub struct TypstRenderer;
+pub struct TypstRenderer {
+    /// in-dexter version written into the generated import line.
+    in_dexter_version: String,
+}
+
+impl Default for TypstRenderer {
+    fn default() -> Self {
+        Self::new(DEFAULT_IN_DEXTER_VERSION)
+    }
+}
 
 impl TypstRenderer {
+    /// Create a renderer emitting imports for the given in-dexter version.
+    pub fn new(in_dexter_version: impl Into<String>) -> Self {
+        Self {
+            in_dexter_version: in_dexter_version.into(),
+        }
+    }
+
+    /// The import line prepended to annotated files.
+    fn import_line(&self) -> String {
+        format!(
+            "#import \"@preview/in-dexter:{}\": *\n",
+            self.in_dexter_version
+        )
+    }
+
     /// Format a single index marker call.
     pub fn format_marker(&self, term: &str, parent_chain: &[String], main: bool) -> String {
         let func = if main { "#index-main" } else { "#index" };
@@ -44,7 +70,7 @@ impl Renderer for TypstRenderer {
 
         // Prepend import if not already present.
         if !result.contains("in-dexter") {
-            result.insert_str(0, IN_DEXTER_IMPORT);
+            result.insert_str(0, &self.import_line());
         }
 
         result
@@ -186,19 +212,19 @@ mod tests {
 
     #[test]
     fn marker_top_level() {
-        let r = TypstRenderer;
+        let r = TypstRenderer::default();
         assert_eq!(r.format_marker("OAuth", &[], false), "#index[OAuth]");
     }
 
     #[test]
     fn marker_top_level_main() {
-        let r = TypstRenderer;
+        let r = TypstRenderer::default();
         assert_eq!(r.format_marker("OAuth", &[], true), "#index-main[OAuth]");
     }
 
     #[test]
     fn marker_child() {
-        let r = TypstRenderer;
+        let r = TypstRenderer::default();
         assert_eq!(
             r.format_marker("OAuth", &["authentication".to_string()], false),
             r#"#index("authentication", "OAuth")"#
@@ -207,7 +233,7 @@ mod tests {
 
     #[test]
     fn marker_child_main() {
-        let r = TypstRenderer;
+        let r = TypstRenderer::default();
         assert_eq!(
             r.format_marker("OAuth", &["authentication".to_string()], true),
             r#"#index-main("authentication", "OAuth")"#
@@ -216,7 +242,7 @@ mod tests {
 
     #[test]
     fn marker_grandchild() {
-        let r = TypstRenderer;
+        let r = TypstRenderer::default();
         assert_eq!(
             r.format_marker(
                 "OAuth",
@@ -231,7 +257,7 @@ mod tests {
 
     #[test]
     fn annotate_single_marker() {
-        let r = TypstRenderer;
+        let r = TypstRenderer::default();
         let source = "OAuth provides delegated authorization.";
         let annotations = vec![Annotation {
             term: "OAuth".to_string(),
@@ -246,7 +272,7 @@ mod tests {
 
     #[test]
     fn annotate_multiple_markers_descending() {
-        let r = TypstRenderer;
+        let r = TypstRenderer::default();
         let source = "OAuth uses TLS for security.";
         let mut annotations = vec![
             Annotation {
@@ -270,7 +296,7 @@ mod tests {
 
     #[test]
     fn annotate_with_parent_chain() {
-        let r = TypstRenderer;
+        let r = TypstRenderer::default();
         let source = "OAuth is important.";
         let annotations = vec![Annotation {
             term: "OAuth".to_string(),
@@ -284,8 +310,38 @@ mod tests {
     }
 
     #[test]
+    fn annotate_uses_configured_in_dexter_version() {
+        let r = TypstRenderer::new("0.9.9");
+        let source = "OAuth is important.";
+        let annotations = vec![Annotation {
+            term: "OAuth".to_string(),
+            parent_chain: Vec::new(),
+            main: false,
+            byte_offset: 5,
+        }];
+        let result = r.annotate(source, &annotations);
+        assert!(result.starts_with("#import \"@preview/in-dexter:0.9.9\": *\n"));
+    }
+
+    #[test]
+    fn default_version_matches_constant() {
+        let r = TypstRenderer::default();
+        let source = "OAuth is important.";
+        let annotations = vec![Annotation {
+            term: "OAuth".to_string(),
+            parent_chain: Vec::new(),
+            main: false,
+            byte_offset: 5,
+        }];
+        let result = r.annotate(source, &annotations);
+        assert!(result.starts_with(&format!(
+            "#import \"@preview/in-dexter:{DEFAULT_IN_DEXTER_VERSION}\": *\n"
+        )));
+    }
+
+    #[test]
     fn annotate_prepends_import() {
-        let r = TypstRenderer;
+        let r = TypstRenderer::default();
         let source = "OAuth is important.";
         let annotations = vec![Annotation {
             term: "OAuth".to_string(),
@@ -299,7 +355,7 @@ mod tests {
 
     #[test]
     fn annotate_skips_import_if_present() {
-        let r = TypstRenderer;
+        let r = TypstRenderer::default();
         let source = "#import \"@preview/in-dexter:0.7.2\": *\n\nOAuth is important.";
         let annotations = vec![Annotation {
             term: "OAuth".to_string(),
@@ -313,7 +369,7 @@ mod tests {
 
     #[test]
     fn annotate_empty_annotations() {
-        let r = TypstRenderer;
+        let r = TypstRenderer::default();
         let source = "No terms here.";
         let result = r.annotate(source, &[]);
         assert_eq!(result, source);
@@ -370,7 +426,7 @@ mod tests {
 
     #[test]
     fn glossary_contains_all_terms() {
-        let r = TypstRenderer;
+        let r = TypstRenderer::default();
         let g = r.glossary(&sample_terms(), None);
         assert!(
             g.contains("[API key <term-api-key>]"),
@@ -392,7 +448,7 @@ mod tests {
 
     #[test]
     fn glossary_uses_code_mode() {
-        let r = TypstRenderer;
+        let r = TypstRenderer::default();
         let g = r.glossary(&sample_terms(), None);
         assert!(
             g.contains("#terms(tight: false,"),
@@ -403,7 +459,7 @@ mod tests {
 
     #[test]
     fn glossary_children_nested() {
-        let r = TypstRenderer;
+        let r = TypstRenderer::default();
         let g = r.glossary(&sample_terms(), None);
         // OAuth is a child of authentication — should be in a nested #terms()
         assert!(
@@ -414,7 +470,7 @@ mod tests {
 
     #[test]
     fn glossary_see_also_linked() {
-        let r = TypstRenderer;
+        let r = TypstRenderer::default();
         let g = r.glossary(&sample_terms(), None);
         assert!(
             g.contains("#link(<term-api-key>)[API key]"),
@@ -424,14 +480,14 @@ mod tests {
 
     #[test]
     fn glossary_has_header_comment() {
-        let r = TypstRenderer;
+        let r = TypstRenderer::default();
         let g = r.glossary(&sample_terms(), None);
         assert!(g.starts_with("// Generated by colophon"));
     }
 
     #[test]
     fn glossary_alphabetical_order() {
-        let r = TypstRenderer;
+        let r = TypstRenderer::default();
         let g = r.glossary(&sample_terms(), None);
         let api_pos = g.find("<term-api-key>").unwrap();
         let auth_pos = g.find("<term-authentication>").unwrap();
@@ -442,7 +498,7 @@ mod tests {
 
     #[test]
     fn glossary_with_spacing() {
-        let r = TypstRenderer;
+        let r = TypstRenderer::default();
         let g = r.glossary(&sample_terms(), Some("12pt"));
         assert!(
             g.contains("#terms(tight: false, spacing: 12pt,"),
@@ -452,7 +508,7 @@ mod tests {
 
     #[test]
     fn glossary_empty_terms() {
-        let r = TypstRenderer;
+        let r = TypstRenderer::default();
         let terms = CuratedTermsFile {
             version: 1,
             generated: "2026-03-20T00:00:00Z".to_string(),
