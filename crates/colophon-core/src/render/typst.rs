@@ -92,7 +92,7 @@ impl Renderer for TypstRenderer {
         // Collect top-level terms (no parent)
         let mut top_level: Vec<&crate::curate::terms::CuratedTerm> =
             terms.terms.iter().filter(|t| t.parent.is_none()).collect();
-        top_level.sort_by(|a, b| a.term.to_lowercase().cmp(&b.term.to_lowercase()));
+        top_level.sort_by_key(|t| t.term.to_lowercase());
 
         // Emit in code mode via #terms() for spacing control.
         let spacing_arg = spacing
@@ -187,7 +187,7 @@ fn emit_term(
             .iter()
             .filter_map(|name| terms_map.get(name.as_str()).copied())
             .collect();
-        child_terms.sort_by(|a, b| a.term.to_lowercase().cmp(&b.term.to_lowercase()));
+        child_terms.sort_by_key(|t| t.term.to_lowercase());
 
         output.push_str(&format!(
             "{prefix}terms.item([{} <{label}>], [{desc}\n",
@@ -288,7 +288,7 @@ mod tests {
                 byte_offset: 5, // after "OAuth"
             },
         ];
-        annotations.sort_by(|a, b| b.byte_offset.cmp(&a.byte_offset));
+        annotations.sort_by_key(|a| std::cmp::Reverse(a.byte_offset));
         let result = r.annotate(source, &annotations);
         assert!(result.contains("OAuth#index-main[OAuth] uses TLS#index[TLS] for security."));
         assert!(result.starts_with("#import"));

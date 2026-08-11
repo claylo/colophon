@@ -48,7 +48,7 @@ owo-colors = { version = "4.3", features = ["supports-colors"] }
 camino = { version = "1.2", features = ["serde1"] }
 directories = "6.0"
 indicatif = "0.18.4"
-tabled = "0.20.0"
+tabled = { version = "0.21.0", default-features = false, features = ["std", "macros"] }
 
 [dev-dependencies]
 assert_cmd = "2.2"

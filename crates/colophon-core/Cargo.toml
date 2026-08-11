@@ -56,9 +56,9 @@ serde_yaml = "0.9"
 walkdir = "2"
 
 # Find executables in PATH
-which = "7"
+which = "8"
 indicatif = "0.18.4"
-typst-syntax = "0.14.0"
+typst-syntax = "0.15.0"
 tempfile = "3.26"
 ah-ah-ah = "0.1.0"
 
