@@ -384,7 +384,7 @@ pub fn run_with_progress(
     }
 
     // Final sort: alphabetical by term (case-insensitive) for readability.
-    candidates.sort_by(|a, b| a.term.to_lowercase().cmp(&b.term.to_lowercase()));
+    candidates.sort_by_key(|c| c.term.to_lowercase());
 
     progress.finish_and_clear();
 

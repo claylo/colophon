@@ -217,7 +217,7 @@ pub fn run_incremental(
     rebuild_children(&mut terms);
     validate_parents(&mut terms);
 
-    terms.sort_by(|a, b| a.term.to_lowercase().cmp(&b.term.to_lowercase()));
+    terms.sort_by_key(|t| t.term.to_lowercase());
     terms.truncate(config.max_terms);
 
     let (thinking, editorial, turns, thinking_tokens, usage) = invoke_result
@@ -486,7 +486,7 @@ fn post_process(
     }
 
     // Sort alphabetically, truncate.
-    terms.sort_by(|a, b| a.term.to_lowercase().cmp(&b.term.to_lowercase()));
+    terms.sort_by_key(|t| t.term.to_lowercase());
     terms.truncate(max_terms);
 
     terms

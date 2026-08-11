@@ -53,7 +53,7 @@ fn walk_node(node: &SyntaxNode, out: &mut String, in_heading: bool) {
     match node.kind() {
         // Text leaf — the prose we want (unless inside a heading).
         SyntaxKind::Text if !in_heading => {
-            let text = node.text();
+            let text = node.leaf_text();
             if !text.is_empty() {
                 if !out.is_empty() && !out.ends_with('\n') && !out.ends_with(' ') {
                     out.push(' ');
@@ -81,7 +81,7 @@ fn walk_node(node: &SyntaxNode, out: &mut String, in_heading: bool) {
 
         // Escape sequences — try to decode the visible character.
         SyntaxKind::Escape if !in_heading => {
-            let text = node.text();
+            let text = node.leaf_text();
             // Typst escapes: \#, \*, \_, etc. — just emit the char after \.
             if text.starts_with('\\') && text.len() > 1 {
                 out.push_str(&text[1..]);

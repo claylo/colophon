@@ -275,7 +275,7 @@ pub(crate) fn run_with_renderer(
         }
 
         // Sort descending by byte_offset so insertions don't shift later offsets.
-        annotations.sort_by(|a, b| b.byte_offset.cmp(&a.byte_offset));
+        annotations.sort_by_key(|a| std::cmp::Reverse(a.byte_offset));
 
         let annotated = renderer.annotate(&source, &annotations);
 

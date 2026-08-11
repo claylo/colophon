@@ -542,27 +542,25 @@ fn parse_stream(
                     }
                 }
             }
-            Some("message_stop") => {
+            Some("message_stop") if !current_turn_json.is_empty() => {
                 // Try to parse the accumulated JSON for this turn.
-                if !current_turn_json.is_empty() {
-                    match serde_json::from_str::<ClaudeOutput>(&current_turn_json) {
-                        Ok(output) => {
-                            tracing::debug!(
-                                turn = turn_count,
-                                terms = output.terms.len(),
-                                suggested = output.suggested.len(),
-                                "valid structured output from turn"
-                            );
-                            last_valid_output = Some(output);
-                        }
-                        Err(e) => {
-                            tracing::warn!(
-                                turn = turn_count,
-                                error = %e,
-                                json_len = current_turn_json.len(),
-                                "failed to parse turn JSON (likely truncated)"
-                            );
-                        }
+                match serde_json::from_str::<ClaudeOutput>(&current_turn_json) {
+                    Ok(output) => {
+                        tracing::debug!(
+                            turn = turn_count,
+                            terms = output.terms.len(),
+                            suggested = output.suggested.len(),
+                            "valid structured output from turn"
+                        );
+                        last_valid_output = Some(output);
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            turn = turn_count,
+                            error = %e,
+                            json_len = current_turn_json.len(),
+                            "failed to parse turn JSON (likely truncated)"
+                        );
                     }
                 }
             }
@@ -831,26 +829,24 @@ fn parse_delta_stream(
                     usage.output_tokens += n as usize;
                 }
             }
-            Some("message_stop") => {
-                if !current_turn_json.is_empty() {
-                    match serde_json::from_str::<ClaudeDeltaOutput>(&current_turn_json) {
-                        Ok(output) => {
-                            tracing::debug!(
-                                turn = turn_count,
-                                additions = output.additions.len(),
-                                modifications = output.modifications.len(),
-                                removals = output.removals.len(),
-                                "valid delta output from turn"
-                            );
-                            last_valid_output = Some(output);
-                        }
-                        Err(e) => {
-                            tracing::warn!(
-                                turn = turn_count,
-                                error = %e,
-                                "failed to parse delta JSON"
-                            );
-                        }
+            Some("message_stop") if !current_turn_json.is_empty() => {
+                match serde_json::from_str::<ClaudeDeltaOutput>(&current_turn_json) {
+                    Ok(output) => {
+                        tracing::debug!(
+                            turn = turn_count,
+                            additions = output.additions.len(),
+                            modifications = output.modifications.len(),
+                            removals = output.removals.len(),
+                            "valid delta output from turn"
+                        );
+                        last_valid_output = Some(output);
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            turn = turn_count,
+                            error = %e,
+                            "failed to parse delta JSON"
+                        );
                     }
                 }
             }
