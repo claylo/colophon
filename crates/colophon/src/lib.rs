@@ -12,37 +12,12 @@
 //!
 //! # Documentation Generation
 //!
-//! The [`command()`] function returns the clap `Command` for generating man pages
-//! and shell completions via `xtask`.
+//! `xtask` builds man pages and shell completions from [`Cli`] through
+//! librebar's generators, which render the same augmented command tree that
+//! `librebar::cli::parse_with` uses at runtime.
 pub mod commands;
 
-use clap::{CommandFactory, Parser, Subcommand};
-use std::path::PathBuf;
-
-/// Color output preference.
-#[derive(Debug, Clone, Copy, Default, clap::ValueEnum)]
-pub enum ColorChoice {
-    /// Detect terminal capabilities automatically.
-    #[default]
-    Auto,
-    /// Always emit colors.
-    Always,
-    /// Never emit colors.
-    Never,
-}
-
-impl ColorChoice {
-    /// Configure global color output based on this choice.
-    ///
-    /// Call this once at startup to set the color mode.
-    pub fn apply(self) {
-        match self {
-            Self::Auto => {} // owo-colors auto-detects by default
-            Self::Always => owo_colors::set_override(true),
-            Self::Never => owo_colors::set_override(false),
-        }
-    }
-}
+use librebar::cli::clap::{Parser, Subcommand};
 
 const BANNER: &str = "\
 ┌─┐┌─┐┬  ┌─┐┌─┐┬ ┬┌─┐┌┐┌
@@ -63,39 +38,19 @@ ENVIRONMENT VARIABLES:
 #[command(version, arg_required_else_help = true)]
 #[command(before_help = BANNER)]
 #[command(after_help = ENV_HELP)]
-#[command(disable_help_flag = true)]
 pub struct Cli {
+    /// Flags shared by every librebar-based CLI.
+    ///
+    /// Supplies `-q`, `-v`, `-C`, `-c`, `--color`, `--format`, and
+    /// `--version-only`, all global. colophon declares none of these itself:
+    /// redeclaring one is a clap name collision, which panics at startup
+    /// rather than failing to compile.
+    #[command(flatten)]
+    pub common: librebar::cli::CommonArgs,
+
     /// The subcommand to execute.
     #[command(subcommand)]
     pub command: Option<Commands>,
-
-    /// Print only the version number (for scripting)
-    #[arg(long)]
-    pub version_only: bool,
-
-    /// Path to configuration file (overrides discovery)
-    #[arg(short, long, global = true, value_name = "FILE")]
-    pub config: Option<PathBuf>,
-
-    /// Run as if started in DIR
-    #[arg(short = 'C', long, global = true)]
-    pub chdir: Option<PathBuf>,
-
-    /// Only print errors (suppresses warnings/info)
-    #[arg(short, long, global = true)]
-    pub quiet: bool,
-
-    /// More detail (repeatable; e.g. -vv)
-    #[arg(short, long, global = true, action = clap::ArgAction::Count)]
-    pub verbose: u8,
-
-    /// Colorize output
-    #[arg(long, global = true, value_enum, default_value_t)]
-    pub color: ColorChoice,
-
-    /// Output as JSON (for scripting)
-    #[arg(long, global = true)]
-    pub json: bool,
 }
 
 /// Available subcommands for the CLI.
@@ -113,19 +68,15 @@ pub enum Commands {
     Render(commands::render::RenderArgs),
 }
 
-/// Returns the clap command for documentation generation.
+/// Machine-readable declaration of colophon's exit contract.
 ///
-/// Adds a custom `-h`/`--help` flag using `HelpShort` so both render
-/// the compact single-line format. This is done at the Command level
-/// (not as a struct field) because clap's derive treats `HelpShort`
-/// as a value-less exit action that conflicts with struct population.
-pub fn command() -> clap::Command {
-    Cli::command().arg(
-        clap::Arg::new("help")
-            .short('h')
-            .long("help")
-            .help("Print help")
-            .global(true)
-            .action(clap::ArgAction::HelpShort),
+/// Consumed by `librebar::cli::parse_with`, which validates it and serves it
+/// from the `schema` subcommand.
+pub fn schema_metadata() -> librebar::cli::SchemaMetadata {
+    librebar::cli::SchemaMetadata::new().error(
+        librebar::cli::ErrorMetadata::new("config_invalid")
+            .exit_code(2)
+            .retryable(false)
+            .description("Configuration could not be loaded or deserialized"),
     )
 }

@@ -39,6 +39,14 @@ pkg-fmt = "zip"
 [dependencies]
 colophon-core = { version = "0.1", path = "../colophon-core" }
 clap = { version = "4.6", features = ["derive"] }
+librebar = { version = "0.6", features = [
+    "cli",
+    "config",
+    "logging",
+    "crash",
+    "diagnostics",
+    "update",
+] }
 anyhow = "1.0"
 tracing = "0.1"
 serde = { version = "1.0", features = ["derive"] }
