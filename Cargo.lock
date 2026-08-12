@@ -387,7 +387,6 @@ dependencies = [
  "camino",
  "clap",
  "colophon-core",
- "directories",
  "indicatif",
  "librebar",
  "owo-colors",
