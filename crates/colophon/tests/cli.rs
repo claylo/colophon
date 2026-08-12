@@ -85,7 +85,11 @@ fn info_shows_package_name_and_version() {
 
 #[test]
 fn info_json_outputs_valid_json() {
-    let output = cmd().arg("info").arg("--json").assert().success();
+    let output = cmd()
+        .arg("info")
+        .args(["--format", "json"])
+        .assert()
+        .success();
 
     let stdout = String::from_utf8_lossy(&output.get_output().stdout);
     let json: serde_json::Value =
@@ -99,7 +103,7 @@ fn info_json_outputs_valid_json() {
 fn info_json_contains_expected_fields() {
     cmd()
         .arg("info")
-        .arg("--json")
+        .args(["--format", "json"])
         .assert()
         .success()
         .stdout(predicate::str::contains("\"name\""))
@@ -112,7 +116,20 @@ fn info_help_shows_command_options() {
         .args(["info", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("--json"));
+        .stdout(predicate::str::contains("--format"));
+}
+
+// =============================================================================
+// Schema Subcommand
+// =============================================================================
+
+#[test]
+fn schema_subcommand_outputs_json() {
+    cmd()
+        .arg("schema")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"name\": \"colophon\""));
 }
 
 // =============================================================================
@@ -250,6 +267,8 @@ fn extract_produces_yaml_output() {
         .args([
             "-C",
             tmp.path().to_str().unwrap(),
+            "--format",
+            "text",
             "extract",
             "--dir",
             ".",
