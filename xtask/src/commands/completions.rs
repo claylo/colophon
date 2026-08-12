@@ -19,7 +19,11 @@ pub fn cmd_completions(args: CompletionsArgs) -> Result<(), String> {
     let out_dir = crate::workspace_root().join(args.out_dir);
     fs::create_dir_all(&out_dir).map_err(|e| format!("{}: {e}", out_dir.display()))?;
 
-    let mut cmd = colophon::command();
+    // Same augmented tree `librebar::cli::parse_with` uses, so completions cover
+    // `schema` and `completions` themselves. Fails only if the application
+    // declares a command name librebar reserves.
+    let mut cmd = librebar::cli::command::<colophon::Cli>()
+        .map_err(|error| format!("build the augmented CLI command tree: {error}"))?;
     let bin_name = "colophon";
 
     let shells: Vec<Shell> = match args.shell {
