@@ -29,9 +29,8 @@ exclude = [
 
 [dependencies]
 camino = { version = "1.2", features = ["serde1"] }
-figment = { version = "0.10", features = ["toml", "yaml", "json"] }
+librebar = { version = "0.6", default-features = false, features = ["config"] }
 serde = { version = "1.0", features = ["derive"] }
-directories = "6.0"
 thiserror = "2.0"
 tracing = "0.1"
 anyhow = "1.0"

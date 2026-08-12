@@ -1,9 +1,11 @@
 //! Configuration loading and discovery.
 //!
-//! This module provides configuration file discovery by:
+//! Discovery is delegated to [`librebar::config`]; this module supplies
+//! colophon's config schema and pins the application name. Sources are:
 //! 1. Walking up from the current directory to find project config
 //! 2. Loading user config from XDG config directory
-//! 3. Merging with sensible defaults
+//! 3. Reading `COLOPHON_`-prefixed environment variables
+//! 4. Merging with sensible defaults
 //!
 //! # Supported formats
 //!
@@ -34,11 +36,15 @@
 //! ```
 
 use camino::{Utf8Path, Utf8PathBuf};
-use figment::Figment;
-use figment::providers::{Format, Json, Serialized, Toml, Yaml};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{ConfigError, ConfigResult};
+
+/// Metadata about which configuration sources were loaded.
+///
+/// Returned alongside [`Config`] from [`ConfigLoader::load()`] so commands
+/// can report the actual config files without re-discovering them.
+pub use librebar::config::ConfigSources;
 
 /// Configuration for source file discovery.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -293,102 +299,81 @@ impl LogLevel {
     }
 }
 
-/// Metadata about which configuration sources were loaded.
-///
-/// Returned alongside [`Config`] from [`ConfigLoader::load()`] so commands
-/// can report the actual config files without re-discovering them.
-#[derive(Debug, Clone, Default, Serialize)]
-pub struct ConfigSources {
-    /// Project config file found by walking up from the search root.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub project_file: Option<Utf8PathBuf>,
-    /// User config file from XDG config directory.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub user_file: Option<Utf8PathBuf>,
-    /// Explicit config files loaded (e.g., from `--config` flag).
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub explicit_files: Vec<Utf8PathBuf>,
-}
-
-impl ConfigSources {
-    /// Returns the highest-precedence config file that was loaded.
-    ///
-    /// Precedence: explicit files > project file > user file.
-    pub fn primary_file(&self) -> Option<&Utf8Path> {
-        self.explicit_files
-            .last()
-            .map(Utf8PathBuf::as_path)
-            .or(self.project_file.as_deref())
-            .or(self.user_file.as_deref())
-    }
-}
-
-/// Supported configuration file extensions (in order of preference).
-const CONFIG_EXTENSIONS: &[&str] = &["toml", "yaml", "yml", "json"];
-
 /// Application name for XDG directory lookup and config file names.
 const APP_NAME: &str = "colophon";
 
+/// Translate a librebar loader error into colophon's config error.
+fn map_load_error(error: librebar::Error) -> ConfigError {
+    match error {
+        librebar::Error::ConfigNotFound => ConfigError::NotFound,
+        other => ConfigError::Deserialize(Box::new(other)),
+    }
+}
+
 /// Builder for loading configuration from multiple sources.
-#[derive(Debug, Default)]
+///
+/// Thin wrapper over [`librebar::config::ConfigLoader`] that pins the
+/// application name to `colophon` and the config type to [`Config`].
+#[derive(Debug)]
 pub struct ConfigLoader {
-    /// Starting directory for project config search.
-    project_search_root: Option<Utf8PathBuf>,
-    /// Whether to include user config from XDG directory.
-    include_user_config: bool,
-    /// Stop searching when we hit a directory containing this file/dir.
-    boundary_marker: Option<String>,
-    /// Explicit config files to load (for testing or programmatic use).
-    explicit_files: Vec<Utf8PathBuf>,
+    inner: librebar::config::ConfigLoader,
+}
+
+impl Default for ConfigLoader {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ConfigLoader {
     /// Create a new config loader with default settings.
     pub fn new() -> Self {
         Self {
-            project_search_root: None,
-            include_user_config: true,
-            boundary_marker: Some(".git".to_string()),
-            explicit_files: Vec::new(),
+            inner: librebar::config::ConfigLoader::new(APP_NAME),
         }
     }
 
     /// Set the starting directory for project config search.
     ///
     /// The loader will walk up from this directory looking for config files.
-    pub fn with_project_search<P: AsRef<Utf8Path>>(mut self, path: P) -> Self {
-        self.project_search_root = Some(path.as_ref().to_path_buf());
-        self
+    pub fn with_project_search<P: AsRef<Utf8Path>>(self, path: P) -> Self {
+        Self {
+            inner: self.inner.with_project_search(path),
+        }
     }
 
     /// Set whether to include user config from `~/.config/colophon/`.
-    pub const fn with_user_config(mut self, include: bool) -> Self {
-        self.include_user_config = include;
-        self
+    pub fn with_user_config(self, include: bool) -> Self {
+        Self {
+            inner: self.inner.with_user_config(include),
+        }
     }
 
     /// Set a boundary marker to stop directory traversal.
     ///
     /// When walking up directories, stop if we find a directory containing
     /// this file or directory name. Default is `.git`.
-    pub fn with_boundary_marker<S: Into<String>>(mut self, marker: S) -> Self {
-        self.boundary_marker = Some(marker.into());
-        self
+    pub fn with_boundary_marker<S: Into<String>>(self, marker: S) -> Self {
+        Self {
+            inner: self.inner.with_boundary_marker(marker),
+        }
     }
 
     /// Disable boundary marker (search all the way to filesystem root).
-    pub fn without_boundary_marker(mut self) -> Self {
-        self.boundary_marker = None;
-        self
+    pub fn without_boundary_marker(self) -> Self {
+        Self {
+            inner: self.inner.without_boundary_marker(),
+        }
     }
 
     /// Add an explicit config file to load.
     ///
     /// Files are loaded in order, with later files taking precedence.
     /// Explicit files are loaded after discovered files.
-    pub fn with_file<P: AsRef<Utf8Path>>(mut self, path: P) -> Self {
-        self.explicit_files.push(path.as_ref().to_path_buf());
-        self
+    pub fn with_file<P: AsRef<Utf8Path>>(self, path: P) -> Self {
+        Self {
+            inner: self.inner.with_file(path),
+        }
     }
 
     /// Load configuration, merging all discovered sources.
@@ -399,137 +384,28 @@ impl ConfigLoader {
     ///
     /// Precedence (highest to lowest):
     /// 1. Explicit files (in order added via `with_file`)
-    /// 2. Project config (closest to search root)
-    /// 3. User config (`~/.config/colophon/config.<ext>`)
-    /// 4. Default values
-    #[tracing::instrument(skip(self), fields(search_root = ?self.project_search_root))]
+    /// 2. `COLOPHON_`-prefixed environment variables
+    /// 3. Project config (closest to search root)
+    /// 4. User config (`~/.config/colophon/config.<ext>`)
+    /// 5. Default values
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError::Deserialize`] if a config file cannot be read
+    /// or parsed, or if the merged result does not match [`Config`].
     pub fn load(self) -> ConfigResult<(Config, ConfigSources)> {
-        tracing::debug!("loading configuration");
-        let mut figment = Figment::new().merge(Serialized::defaults(Config::default()));
-        let mut sources = ConfigSources::default();
-
-        // Start with user config (lowest precedence of file sources)
-        if self.include_user_config
-            && let Some(user_config) = self.find_user_config()
-        {
-            figment = Self::merge_file(figment, &user_config);
-            sources.user_file = Some(user_config);
-        }
-
-        // Add project config
-        if let Some(ref root) = self.project_search_root
-            && let Some(project_config) = self.find_project_config(root)
-        {
-            figment = Self::merge_file(figment, &project_config);
-            sources.project_file = Some(project_config);
-        }
-
-        // Add explicit files (highest precedence)
-        for file in &self.explicit_files {
-            figment = Self::merge_file(figment, file);
-        }
-        sources.explicit_files = self.explicit_files;
-
-        let config: Config = figment
-            .extract()
-            .map_err(|e| ConfigError::Deserialize(Box::new(e)))?;
-        tracing::info!(
-            log_level = config.log_level.as_str(),
-            "configuration loaded"
-        );
-        Ok((config, sources))
+        self.inner.load::<Config>().map_err(map_load_error)
     }
 
-    /// Load configuration, returning an error if no config file is found.
+    /// Load configuration, returning an error if no config source is found.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError::NotFound`] if no config file, environment
+    /// variable, or override supplied any value.
     pub fn load_or_error(self) -> ConfigResult<(Config, ConfigSources)> {
-        let has_user = self.include_user_config && self.find_user_config().is_some();
-        let has_project = self
-            .project_search_root
-            .as_ref()
-            .and_then(|root| self.find_project_config(root))
-            .is_some();
-        let has_explicit = !self.explicit_files.is_empty();
-
-        if !has_user && !has_project && !has_explicit {
-            return Err(ConfigError::NotFound);
-        }
-
-        self.load()
+        self.inner.load_or_error::<Config>().map_err(map_load_error)
     }
-
-    /// Find project config by walking up from the given directory.
-    fn find_project_config(&self, start: &Utf8Path) -> Option<Utf8PathBuf> {
-        let mut current = Some(start.to_path_buf());
-
-        while let Some(dir) = current {
-            // Check for config files in this directory (try each extension)
-            for ext in CONFIG_EXTENSIONS {
-                // Try .config/ directory first (.config/colophon.toml)
-                let dotconfig = dir.join(format!(".config/{APP_NAME}.{ext}"));
-                if dotconfig.is_file() {
-                    return Some(dotconfig);
-                }
-
-                // Then dotfile (.colophon.toml)
-                let dotfile = dir.join(format!(".{APP_NAME}.{ext}"));
-                if dotfile.is_file() {
-                    return Some(dotfile);
-                }
-
-                // Then regular name (colophon.toml)
-                let regular = dir.join(format!("{APP_NAME}.{ext}"));
-                if regular.is_file() {
-                    return Some(regular);
-                }
-            }
-
-            // Check for boundary marker AFTER checking config files,
-            // so a config in the same directory as the marker is found.
-            if let Some(ref marker) = self.boundary_marker
-                && dir.join(marker).exists()
-                && dir != start
-            {
-                break;
-            }
-
-            current = dir.parent().map(Utf8Path::to_path_buf);
-        }
-
-        None
-    }
-
-    /// Find user config in XDG config directory.
-    fn find_user_config(&self) -> Option<Utf8PathBuf> {
-        let proj_dirs = directories::ProjectDirs::from("", "", APP_NAME)?;
-        let config_dir = proj_dirs.config_dir();
-
-        // Try each supported extension
-        for ext in CONFIG_EXTENSIONS {
-            let config_path = config_dir.join(format!("config.{ext}"));
-            if config_path.is_file() {
-                return Utf8PathBuf::from_path_buf(config_path).ok();
-            }
-        }
-
-        None
-    }
-
-    /// Merge a config file into the figment, detecting format from extension.
-    fn merge_file(figment: Figment, path: &Utf8Path) -> Figment {
-        match path.extension() {
-            Some("toml") => figment.merge(Toml::file_exact(path.as_str())),
-            Some("yaml" | "yml") => figment.merge(Yaml::file_exact(path.as_str())),
-            Some("json") => figment.merge(Json::file_exact(path.as_str())),
-            _ => figment.merge(Toml::file_exact(path.as_str())),
-        }
-    }
-}
-
-/// Get the project directories for XDG-compliant path resolution.
-///
-/// Returns `None` if the home directory cannot be determined.
-fn project_dirs() -> Option<directories::ProjectDirs> {
-    directories::ProjectDirs::from("", "", APP_NAME)
 }
 
 /// Get the user config directory path.
@@ -537,8 +413,7 @@ fn project_dirs() -> Option<directories::ProjectDirs> {
 /// Returns `~/.config/colophon/` on Linux, `~/Library/Application Support/colophon/`
 /// on macOS, and equivalent on other platforms.
 pub fn user_config_dir() -> Option<Utf8PathBuf> {
-    let proj_dirs = project_dirs()?;
-    Utf8PathBuf::from_path_buf(proj_dirs.config_dir().to_path_buf()).ok()
+    librebar::config::user_config_dir(APP_NAME)
 }
 
 /// Get the user cache directory path.
@@ -546,8 +421,7 @@ pub fn user_config_dir() -> Option<Utf8PathBuf> {
 /// Returns `~/.cache/colophon/` on Linux, `~/Library/Caches/colophon/`
 /// on macOS, and equivalent on other platforms.
 pub fn user_cache_dir() -> Option<Utf8PathBuf> {
-    let proj_dirs = project_dirs()?;
-    Utf8PathBuf::from_path_buf(proj_dirs.cache_dir().to_path_buf()).ok()
+    librebar::config::user_cache_dir(APP_NAME)
 }
 
 /// Get the user data directory path.
@@ -555,8 +429,7 @@ pub fn user_cache_dir() -> Option<Utf8PathBuf> {
 /// Returns `~/.local/share/colophon/` on Linux, `~/Library/Application Support/colophon/`
 /// on macOS, and equivalent on other platforms.
 pub fn user_data_dir() -> Option<Utf8PathBuf> {
-    let proj_dirs = project_dirs()?;
-    Utf8PathBuf::from_path_buf(proj_dirs.data_dir().to_path_buf()).ok()
+    librebar::config::user_data_dir(APP_NAME)
 }
 
 /// Get the local data directory path (machine-specific, not synced).
@@ -564,8 +437,7 @@ pub fn user_data_dir() -> Option<Utf8PathBuf> {
 /// Returns `~/.local/share/colophon/` on Linux, `~/Library/Application Support/colophon/`
 /// on macOS, and equivalent on other platforms.
 pub fn user_data_local_dir() -> Option<Utf8PathBuf> {
-    let proj_dirs = project_dirs()?;
-    Utf8PathBuf::from_path_buf(proj_dirs.data_local_dir().to_path_buf()).ok()
+    librebar::config::user_data_local_dir(APP_NAME)
 }
 
 #[cfg(test)]

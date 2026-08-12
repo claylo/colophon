@@ -5,9 +5,12 @@ use thiserror::Error;
 /// Errors that can occur when working with configuration.
 #[derive(Error, Debug)]
 pub enum ConfigError {
-    /// Failed to deserialize configuration.
+    /// Failed to load or deserialize configuration.
     #[error("invalid configuration: {0}")]
-    Deserialize(#[from] Box<figment::Error>),
+    Deserialize(
+        /// The underlying loader error.
+        Box<dyn std::error::Error + Send + Sync>,
+    ),
 
     /// Configuration file not found after searching all locations.
     #[error("no configuration file found")]

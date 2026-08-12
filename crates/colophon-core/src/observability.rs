@@ -355,8 +355,8 @@ fn resolve_log_target_with(
     }
 
     // Use XDG-compliant data directory for log storage
-    if let Some(proj_dirs) = directories::ProjectDirs::from("", "", service) {
-        candidates.push(proj_dirs.data_local_dir().join("logs"));
+    if let Some(data_local) = librebar::config::user_data_local_dir(service) {
+        candidates.push(data_local.join("logs").into_std_path_buf());
     }
 
     if let Ok(dir) = std::env::current_dir() {
