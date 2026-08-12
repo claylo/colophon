@@ -34,8 +34,6 @@ pub mod error;
 
 pub mod extract;
 
-pub mod observability;
-
 pub mod render;
 
 pub(crate) mod typst_prose;
